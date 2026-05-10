@@ -35,23 +35,23 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-#define CTRL_PERIOD_MS               (1U)
-#define CTRL_PERIOD_S                (0.001f)
-
+#define CTRL_PERIOD_MS               (1U)  //控制循环周期，ms
+#define CTRL_PERIOD_S                (0.001f)//用秒表示控制循环周期，0.001s
+//PWM最小/最大占空比
 #define DUTY_MIN                     (0.02f)
 #define DUTY_MAX                     (0.95f)
-
+//电压设定上下限和步长
 #define VOUT_SET_MIN_CV              (200U)   /* 2.00V  */
 #define VOUT_SET_MAX_CV              (3300U)  /* 33.00V */
 #define VOUT_SET_STEP_CV             (2U)     /* 0.02V  */
-
+//电流设定上下限和步长
 #define IOUT_SET_MIN_DA              (1U)     /* 0.1A */
 #define IOUT_SET_MAX_DA              (20U)    /* 2.0A */
 #define IOUT_SET_STEP_DA             (1U)     /* 0.1A */
-
+//ADC满刻度
 #define ADC_FULL_SCALE               (4095.0f)
 #define ADC_VREF                     (3.3f)
-
+//？？
 /* 按实物标定修改: Vout = Vadc * VOLTAGE_SCALE */
 #define VOLTAGE_SCALE                (10.0f)
 /* 按实物标定修改: Iout = (Vadcx - CURRENT_OFFSET_V) * CURRENT_SCALE_A_PER_V */
@@ -72,9 +72,9 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
-ADC_HandleTypeDef hadc1;
+ADC_HandleTypeDef hadc1;  //ADC1的HAL句柄
 
-TIM_HandleTypeDef htim1;
+TIM_HandleTypeDef htim1;  //TIM1的HAL句柄
 
 /* USER CODE BEGIN PV */
 
@@ -82,7 +82,7 @@ typedef enum
 {
   MODE_CV = 0,
   MODE_CC = 1
-} control_mode_t;
+} control_mode_t;  //控制模式：恒压（CV）或恒流（CC）
 
 typedef struct
 {
@@ -91,23 +91,24 @@ typedef struct
   float integral;
   float out_min;
   float out_max;
-} pi_ctrl_t;
+} pi_ctrl_t;  //PI控制器参数和状态？？
 
-static control_mode_t g_mode = MODE_CV;
+static control_mode_t g_mode = MODE_CV;  //当前控制模式
 
+//电压目标量和电流目标量，单位分别是0.01V和0.1A，初始值分别是5.00V和1.0A
 static uint16_t g_vset_cv = 500U; /* 5.00V */
 static uint8_t g_iset_da = 10U;   /* 1.0A */
-
+//输出电压和电流的测量值和滤波后的值
 static float g_vout_real = 0.0f;
 static float g_iout_real = 0.0f;
 static float g_vout_filt = 0.0f;
 static float g_iout_filt = 0.0f;
-
+//当前目标占空比，初始值为0.5（50%）
 static float g_duty_cmd = 0.5f;
-
+//ADC原始读数
 static uint16_t g_adc_raw_v = 0U;
 static uint16_t g_adc_raw_i = 0U;
-
+//CV，CC控制器初始化
 static pi_ctrl_t g_pi_cv = {CV_KP, CV_KI, 0.0f, DUTY_MIN, DUTY_MAX};
 static pi_ctrl_t g_pi_cc = {CC_KP, CC_KI, 0.0f, DUTY_MIN, DUTY_MAX};
 
@@ -134,7 +135,8 @@ __weak int Keypad_GetKey(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-static float clampf(float x, float min_val, float max_val)
+//？？
+static float clampf(float x, float min_val, float max_val)  
 {
   if (x < min_val)
   {
@@ -146,43 +148,42 @@ static float clampf(float x, float min_val, float max_val)
   }
   return x;
 }
-
+//PI控制器重置函数，将pi->integral设置为预加载值preload，防止模式切换时积分项引起的突变
 static void PI_Reset(pi_ctrl_t *pi, float preload)
 {
   pi->integral = preload;
 }
-
+//PI控制器更新函数，根据设定值setpoint、反馈值feedback和时间步长dt_s计算新的控制输出
 static float PI_Update(pi_ctrl_t *pi, float setpoint, float feedback, float dt_s)
 {
-  const float err = setpoint - feedback;
-  const float p_term = pi->kp * err;
-  float out = p_term + pi->integral;
+  const float err = setpoint - feedback;  //误差
+  const float p_term = pi->kp * err;  //比例项
+  float out = p_term + pi->integral;  //临时输出
 
   if ((out > pi->out_min) && (out < pi->out_max))
   {
-    pi->integral += pi->ki * err * dt_s;
+    pi->integral += pi->ki * err * dt_s;  //仅当输出未饱和时才更新积分项，防止积分饱和
   }
-
+  //更新输出out
   pi->integral = clampf(pi->integral, pi->out_min, pi->out_max);
   out = p_term + pi->integral;
   out = clampf(out, pi->out_min, pi->out_max);
   return out;
 }
-
+//
 static void Power_ReadFeedback(void)
 {
   if (HAL_ADC_Start(&hadc1) != HAL_OK)
   {
     return;
   }
-
+//轮询等待ADC转换完成，读取电压和电流的原始ADC值，存储在g_adc_raw_v和g_adc_raw_i中
   if (HAL_ADC_PollForConversion(&hadc1, 5U) != HAL_OK)
   {
     (void)HAL_ADC_Stop(&hadc1);
     return;
   }
   g_adc_raw_v = (uint16_t)HAL_ADC_GetValue(&hadc1);
-
   if (HAL_ADC_PollForConversion(&hadc1, 5U) != HAL_OK)
   {
     (void)HAL_ADC_Stop(&hadc1);
@@ -191,7 +192,7 @@ static void Power_ReadFeedback(void)
   g_adc_raw_i = (uint16_t)HAL_ADC_GetValue(&hadc1);
 
   (void)HAL_ADC_Stop(&hadc1);
-
+//根据ADC原始值计算实际电压和电流，并进行简单的IIR滤波，更新g_v/iout_real/filt
   {
     const float vadc_v = ((float)g_adc_raw_v / ADC_FULL_SCALE) * ADC_VREF;
     const float vadc_i = ((float)g_adc_raw_i / ADC_FULL_SCALE) * ADC_VREF;
@@ -207,20 +208,20 @@ static void Power_ReadFeedback(void)
     g_iout_filt += IIR_ALPHA * (g_iout_real - g_iout_filt);
   }
 }
-
+//根据计算得到的占空比duty，更新TIM1通道1的比较寄存器值，从而调整PWM输出占空比
 static void Power_ApplyDuty(float duty)
 {
-  const uint32_t period = __HAL_TIM_GET_AUTORELOAD(&htim1) + 1U;
-  uint32_t ccr = (uint32_t)(duty * (float)period);
+  const uint32_t period = __HAL_TIM_GET_AUTORELOAD(&htim1) + 1U;//用于读取定时器自动重装载值
+  uint32_t ccr = (uint32_t)(duty * (float)period);//根据占空比计算比较寄存器值CCR
 
   if (ccr >= period)
   {
     ccr = period - 1U;
   }
 
-  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, ccr);
+  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, ccr);//设置TIM1通道1的比较寄存器值，更新PWM占空比
 }
-
+//根据当前控制模式（CV或CC），使用对应的PI控制器计算新的占空比命令，并应用到PWM输出
 static void Power_ControlStep(float dt_s)
 {
   const float vset = (float)g_vset_cv * 0.01f;
@@ -238,12 +239,12 @@ static void Power_ControlStep(float dt_s)
   g_duty_cmd = clampf(g_duty_cmd, DUTY_MIN, DUTY_MAX);
   Power_ApplyDuty(g_duty_cmd);
 }
-
+//获取按键输入的弱函数，默认实现返回-1表示没有按键被按下，用户可以在其他文件中重定义该函数以实现实际的按键读取逻辑
 __weak int Keypad_GetKey(void)
 {
   return -1;
 }
-
+//处理键盘输入，根据按键调整控制模式、设定值等参数
 static void Power_HandleKeyboard(void)
 {
   const int key = Keypad_GetKey();

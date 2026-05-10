@@ -1,0 +1,14 @@
+main.c:137:14:clampf	24	static
+main.c:150:13:PI_Reset	16	static
+main.c:155:14:PI_Update	40	static
+main.c:172:13:Power_ReadFeedback	16	static
+main.c:211:13:Power_ApplyDuty	24	static
+main.c:224:13:Power_ControlStep	24	static
+main.c:242:12:Keypad_GetKey	4	static
+main.c:247:13:Power_HandleKeyboard	16	static
+main.c:314:5:main	16	static
+main.c:389:6:SystemClock_Config	168	static
+main.c:443:13:MX_ADC1_Init	56	static
+main.c:516:13:MX_TIM1_Init	120	static
+main.c:599:13:MX_GPIO_Init	24	static
+main.c:617:6:Error_Handler	4	static,ignoring_inline_asm
