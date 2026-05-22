@@ -5,7 +5,9 @@
 
 # Add inputs and outputs from these tool invocations to the build variables 
 C_SRCS += \
+../Core/Src/keypad.c \
 ../Core/Src/main.c \
+../Core/Src/oled_ssd1306.c \
 ../Core/Src/stm32g4xx_hal_msp.c \
 ../Core/Src/stm32g4xx_it.c \
 ../Core/Src/syscalls.c \
@@ -13,7 +15,9 @@ C_SRCS += \
 ../Core/Src/system_stm32g4xx.c 
 
 OBJS += \
+./Core/Src/keypad.o \
 ./Core/Src/main.o \
+./Core/Src/oled_ssd1306.o \
 ./Core/Src/stm32g4xx_hal_msp.o \
 ./Core/Src/stm32g4xx_it.o \
 ./Core/Src/syscalls.o \
@@ -21,7 +25,9 @@ OBJS += \
 ./Core/Src/system_stm32g4xx.o 
 
 C_DEPS += \
+./Core/Src/keypad.d \
 ./Core/Src/main.d \
+./Core/Src/oled_ssd1306.d \
 ./Core/Src/stm32g4xx_hal_msp.d \
 ./Core/Src/stm32g4xx_it.d \
 ./Core/Src/syscalls.d \
