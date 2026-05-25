@@ -27,7 +27,7 @@
 #include <stdio.h>
 #include "keypad.h"
 #include "codetab.h"
-#include "oled.h"
+
 
 /* USER CODE END Includes */
 
@@ -436,7 +436,7 @@ int main(void)
   Keypad_Init();
   OLED_Init();
   OLED_CLS();
-  OLED_ShowStr(0, 0, (unsigned char *)"OLED Init OK", 2);
+  // OLED_ShowStr(0, 0, (unsigned char *)"OLED Init OK", 2);
 
   if (HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED) != HAL_OK)
   {
