@@ -259,10 +259,9 @@ static void Power_HandleKeyboard(void)
     return;
   }
 
-  if ((key >= 1) && (key <= 16))
+  if (key > 0)
   {
     HAL_GPIO_TogglePin(USER_KEY_GPIO_Port, USER_KEY_Pin);
-    return;
   }
 
   switch ((char)key)
