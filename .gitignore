@@ -1,2 +1,5 @@
-# ºöÂÔDebugÎÄ¼ş¼Ğ
-/Debug/
+# å¿½ç•¥Debugæ–‡ä»¶å¤?
+Debug/
+.settings/
+.metadata/
+*.launch

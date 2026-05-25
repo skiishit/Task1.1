@@ -1,8 +1,0 @@
-oled_ssd1306.c:31:23:OLED_Font6x8	16	static
-oled_ssd1306.c:72:13:OLED_WriteCommand	32	static
-oled_ssd1306.c:78:13:OLED_WriteData	32	static
-oled_ssd1306.c:84:13:OLED_SetPos	16	static
-oled_ssd1306.c:91:6:OLED_Init	16	static
-oled_ssd1306.c:126:6:OLED_Clear	16	static
-oled_ssd1306.c:138:6:OLED_ShowString	24	static
-oled_ssd1306.c:171:6:OLED_ShowKey	24	static
