@@ -1,2 +1,4 @@
 # 忽略Debug文件夹
 Debug/
+.settings/
+.metadata/
