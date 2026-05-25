@@ -1,12 +1,10 @@
 #include "oled_ssd1306.h"
 
-#define OLED_I2C_ADDR_A 0x78U
-#define OLED_I2C_ADDR_B 0x7AU
+#define OLED_I2C_ADDR 0x78U
 #define OLED_WIDTH 128U
 #define OLED_PAGES 8U
 
 static I2C_HandleTypeDef *g_oled_i2c = NULL;
-static uint16_t g_oled_addr = OLED_I2C_ADDR_A;
 
 static const uint8_t font_space[6] = {0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U};
 static const uint8_t font_S[6] = {0x46U, 0x49U, 0x49U, 0x49U, 0x31U, 0x00U};
@@ -39,13 +37,13 @@ static const uint8_t *OLED_Font6x8(char c)
 static void OLED_WriteCommand(uint8_t cmd)
 {
   uint8_t buf[2] = {0x00U, cmd};
-  (void)HAL_I2C_Master_Transmit(g_oled_i2c, g_oled_addr, buf, 2U, 10U);
+  (void)HAL_I2C_Master_Transmit(g_oled_i2c, OLED_I2C_ADDR, buf, 2U, 10U);
 }
 
 static void OLED_WriteData(uint8_t data)
 {
   uint8_t buf[2] = {0x40U, data};
-  (void)HAL_I2C_Master_Transmit(g_oled_i2c, g_oled_addr, buf, 2U, 10U);
+  (void)HAL_I2C_Master_Transmit(g_oled_i2c, OLED_I2C_ADDR, buf, 2U, 10U);
 }
 
 static void OLED_SetPos(uint8_t x, uint8_t y)
@@ -59,16 +57,6 @@ void OLED_Init(I2C_HandleTypeDef *hi2c)
 {
   g_oled_i2c = hi2c;
   HAL_Delay(100U);
-
-  g_oled_addr = OLED_I2C_ADDR_A;
-  if (HAL_I2C_IsDeviceReady(g_oled_i2c, g_oled_addr, 2U, 20U) != HAL_OK)
-  {
-    g_oled_addr = OLED_I2C_ADDR_B;
-    if (HAL_I2C_IsDeviceReady(g_oled_i2c, g_oled_addr, 2U, 20U) != HAL_OK)
-    {
-      return;
-    }
-  }
 
   OLED_WriteCommand(0xAEU);
   OLED_WriteCommand(0x20U);

@@ -1,6 +1,6 @@
-keypad.c:25:17:Keypad_RowMask	4	static
-keypad.c:30:16:Keypad_AllColsHigh	16	static
-keypad.c:42:12:Keypad_Scan	24	static,ignoring_inline_asm
-keypad.c:93:6:Keypad_Init	32	static
-keypad.c:105:5:Keypad_GetKey	16	static
-keypad.c:135:6:HAL_GPIO_EXTI_Callback	16	static
+keypad.c:34:17:Keypad_RowMask	4	static
+keypad.c:40:16:Keypad_AllColsHigh	16	static
+keypad.c:52:12:Keypad_Scan	24	static,ignoring_inline_asm
+keypad.c:103:6:Keypad_Init	32	static
+keypad.c:115:5:Keypad_GetKey	16	static
+keypad.c:152:6:HAL_GPIO_EXTI_Callback	16	static

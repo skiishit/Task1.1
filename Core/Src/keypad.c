@@ -5,8 +5,9 @@
 #define KEYPAD_ROWS 4U
 #define KEYPAD_COLS 4U
 
-static volatile uint8_t g_keypad_pending = 0U;
-static uint8_t g_keypad_locked = 0U;
+static volatile uint8_t g_keypad_pending = 0U;//按键事件标志，1表示有按键事件待处理，0表示没有
+static uint8_t g_keypad_locked = 0U;//按键锁定标志，1表示按键被锁定（即正在处理一个按键事件），0表示按键未锁定
+static uint32_t g_keypad_last_tick = 0U;
 
 static const uint16_t g_row_pins[KEYPAD_ROWS] = {
   ROW1_Pin,
@@ -22,11 +23,20 @@ static const uint16_t g_col_pins[KEYPAD_COLS] = {
   COL4_Pin
 };
 
+static const char g_keymap[KEYPAD_ROWS][KEYPAD_COLS] = {
+  {'1', '2', '3', 'A'},
+  {'4', '5', '6', 'B'},
+  {'7', '8', '9', 'C'},
+  {'*', '0', '#', 'D'}
+};
+
+//获取行引脚的掩码，用于一次性操作所有行引脚
 static uint16_t Keypad_RowMask(void)
 {
   return (uint16_t)(ROW1_Pin | ROW2_Pin | ROW3_Pin | ROW4_Pin);
 }
 
+//检查所有列引脚是否都处于高电平状态，返回1表示所有列都高，返回0表示至少有一列为低电平
 static uint8_t Keypad_AllColsHigh(void)
 {
   for (uint8_t col = 0U; col < KEYPAD_COLS; ++col)
@@ -81,7 +91,7 @@ static int Keypad_Scan(void)
       if (HAL_GPIO_ReadPin(GPIOD, g_col_pins[col]) == GPIO_PIN_SET)
       {
         HAL_GPIO_WritePin(GPIOD, row_mask, GPIO_PIN_RESET);
-        return (int)(row * KEYPAD_COLS + col + 1U);
+        return (int)g_keymap[row][col];
       }
     }
   }
@@ -104,6 +114,12 @@ void Keypad_Init(void)
 
 int Keypad_GetKey(void)
 {
+  const uint32_t now = HAL_GetTick();
+  if ((now - g_keypad_last_tick) < 25U)
+  {
+    return -1;
+  }
+
   if (g_keypad_locked != 0U)
   {
     if (Keypad_AllColsHigh() != 0U)
@@ -128,6 +144,7 @@ int Keypad_GetKey(void)
   if (key > 0)
   {
     g_keypad_locked = 1U;
+    g_keypad_last_tick = now;
   }
   return key;
 }

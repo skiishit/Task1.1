@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../6-2-1硬件I2C_OLED_0.96"
+		},
+		{
+			"path": "../test/test"
+		}
+	],
+	"settings": {}
+}
