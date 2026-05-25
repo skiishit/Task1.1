@@ -24,6 +24,7 @@
 /* USER CODE BEGIN Includes */
 
 #include <stdbool.h>
+#include <stdio.h>
 #include "keypad.h"
 #include "oled_ssd1306.h"
 
@@ -79,6 +80,9 @@ ADC_HandleTypeDef hadc1;
 I2C_HandleTypeDef hi2c3;
 
 TIM_HandleTypeDef htim1;
+TIM_HandleTypeDef htim2;
+
+UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
 
@@ -115,6 +119,7 @@ static uint16_t g_adc_raw_i = 0U;
 //CV，CC控制器初始化
 static pi_ctrl_t g_pi_cv = {CV_KP, CV_KI, 0.0f, DUTY_MIN, DUTY_MAX};
 static pi_ctrl_t g_pi_cc = {CC_KP, CC_KI, 0.0f, DUTY_MIN, DUTY_MAX};
+static volatile uint8_t g_uart_send_pending = 0U;
 
 /* USER CODE END PV */
 
@@ -124,6 +129,8 @@ static void MX_GPIO_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_I2C3_Init(void);
+static void MX_USART1_UART_Init(void);
+static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 
 static float clampf(float x, float min_val, float max_val);
@@ -133,6 +140,9 @@ static void Power_ApplyDuty(float duty);
 static void Power_HandleKeyboard(void);
 static float PI_Update(pi_ctrl_t *pi, float setpoint, float feedback, float dt_s);
 static void PI_Reset(pi_ctrl_t *pi, float preload);
+static void Uart_SendSetpoints(void);
+static void Oled_UpdateDisplay(void);
+static void Oled_WriteLine(uint8_t page, const char *text);
 __weak int Keypad_GetKey(void);
 
 /* USER CODE END PFP */
@@ -244,6 +254,75 @@ static void Power_ControlStep(float dt_s)
   g_duty_cmd = clampf(g_duty_cmd, DUTY_MIN, DUTY_MAX);
   Power_ApplyDuty(g_duty_cmd);
 }
+
+static void Uart_SendSetpoints(void)
+{
+  char msg[64];
+  const uint16_t vset_cv = g_vset_cv;
+  const uint8_t iset_da = g_iset_da;
+  const uint16_t v_int = (uint16_t)(vset_cv / 100U);
+  const uint16_t v_frac = (uint16_t)(vset_cv % 100U);
+  const uint8_t i_int = (uint8_t)(iset_da / 10U);
+  const uint8_t i_frac = (uint8_t)(iset_da % 10U);
+  const int len = snprintf(msg, sizeof(msg),
+                           "Vset=%u.%02uV Iset=%u.%uA\r\n",
+                           (unsigned)v_int, (unsigned)v_frac,
+                           (unsigned)i_int, (unsigned)i_frac);
+  if (len > 0)
+  {
+    (void)HAL_UART_Transmit(&huart1, (uint8_t *)msg, (uint16_t)len, 50U);
+  }
+}
+
+static void Oled_UpdateDisplay(void)
+{
+  char line0[17];
+  char line1[17];
+  char line2[17];
+  char line3[17];
+  const uint16_t vset_cv = g_vset_cv;
+  const uint8_t iset_da = g_iset_da;
+  const uint16_t vset_int = (uint16_t)(vset_cv / 100U);
+  const uint16_t vset_frac = (uint16_t)(vset_cv % 100U);
+  const uint8_t iset_int = (uint8_t)(iset_da / 10U);
+  const uint8_t iset_frac = (uint8_t)(iset_da % 10U);
+  const uint16_t vout_cv = (uint16_t)(g_vout_filt * 100.0f + 0.5f);
+  const uint16_t iout_da = (uint16_t)(g_iout_filt * 10.0f + 0.5f);
+  const uint16_t vout_int = (uint16_t)(vout_cv / 100U);
+  const uint16_t vout_frac = (uint16_t)(vout_cv % 100U);
+  const uint16_t iout_int = (uint16_t)(iout_da / 10U);
+  const uint16_t iout_frac = (uint16_t)(iout_da % 10U);
+
+  (void)snprintf(line0, sizeof(line0), "SV:%02u.%02uV", (unsigned)vset_int, (unsigned)vset_frac);
+  (void)snprintf(line1, sizeof(line1), "SI:%u.%uA", (unsigned)iset_int, (unsigned)iset_frac);
+  (void)snprintf(line2, sizeof(line2), "RV:%02u.%02uV", (unsigned)vout_int, (unsigned)vout_frac);
+  (void)snprintf(line3, sizeof(line3), "RI:%u.%uA", (unsigned)iout_int, (unsigned)iout_frac);
+
+  Oled_WriteLine(0U, line0);
+  Oled_WriteLine(2U, line1);
+  Oled_WriteLine(4U, line2);
+  Oled_WriteLine(6U, line3);
+}
+
+static void Oled_WriteLine(uint8_t page, const char *text)
+{
+  char buf[17];
+  uint8_t i = 0U;
+
+  for (i = 0U; i < 16U; ++i)
+  {
+    if ((text != NULL) && (text[i] != '\0'))
+    {
+      buf[i] = text[i];
+    }
+    else
+    {
+      buf[i] = ' ';
+    }
+  }
+  buf[16] = '\0';
+  OLED_ShowString(0U, page, buf);
+}
 //获取按键输入的弱函数，默认实现返回-1表示没有按键被按下，用户可以在其他文件中重定义该函数以实现实际的按键读取逻辑
 __weak int Keypad_GetKey(void)
 {
@@ -349,6 +428,8 @@ int main(void)
   MX_ADC1_Init();
   MX_TIM1_Init();
   MX_I2C3_Init();
+  MX_USART1_UART_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
 
   Keypad_Init();
@@ -370,6 +451,11 @@ int main(void)
     Error_Handler();
   }
 
+  if (HAL_TIM_Base_Start_IT(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
   PI_Reset(&g_pi_cv, g_duty_cmd);
   PI_Reset(&g_pi_cc, g_duty_cmd);
   Power_ApplyDuty(g_duty_cmd);
@@ -384,6 +470,7 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
     static uint32_t last_tick = 0U;
+    static uint32_t last_oled_tick = 0U;
     const uint32_t now = HAL_GetTick();
 
     if ((now - last_tick) >= CTRL_PERIOD_MS)
@@ -393,6 +480,18 @@ int main(void)
       Power_HandleKeyboard();
       Power_ReadFeedback();
       Power_ControlStep(CTRL_PERIOD_S);
+    }
+
+    if ((now - last_oled_tick) >= 200U)
+    {
+      last_oled_tick = now;
+      Oled_UpdateDisplay();
+    }
+
+    if (g_uart_send_pending != 0U)
+    {
+      g_uart_send_pending = 0U;
+      Uart_SendSetpoints();
     }
   }
   /* USER CODE END 3 */
@@ -443,7 +542,9 @@ void SystemClock_Config(void)
   }
   /** Initializes the peripherals clocks
   */
-  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_I2C3|RCC_PERIPHCLK_ADC12;
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USART1|RCC_PERIPHCLK_I2C3
+                              |RCC_PERIPHCLK_ADC12;
+  PeriphClkInit.Usart1ClockSelection = RCC_USART1CLKSOURCE_PCLK2;
   PeriphClkInit.I2c3ClockSelection = RCC_I2C3CLKSOURCE_PCLK1;
   PeriphClkInit.Adc12ClockSelection = RCC_ADC12CLKSOURCE_SYSCLK;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
@@ -655,6 +756,99 @@ static void MX_TIM1_Init(void)
 }
 
 /**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 17000-1;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 9999;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
+
+}
+
+/**
+  * @brief USART1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART1_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART1_Init 0 */
+
+  /* USER CODE END USART1_Init 0 */
+
+  /* USER CODE BEGIN USART1_Init 1 */
+
+  /* USER CODE END USART1_Init 1 */
+  huart1.Instance = USART1;
+  huart1.Init.BaudRate = 115200;
+  huart1.Init.WordLength = UART_WORDLENGTH_8B;
+  huart1.Init.StopBits = UART_STOPBITS_1;
+  huart1.Init.Parity = UART_PARITY_NONE;
+  huart1.Init.Mode = UART_MODE_TX_RX;
+  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart1.Init.ClockPrescaler = UART_PRESCALER_DIV1;
+  huart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_SetTxFifoThreshold(&huart1, UART_TXFIFO_THRESHOLD_1_8) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_SetRxFifoThreshold(&huart1, UART_RXFIFO_THRESHOLD_1_8) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_DisableFifoMode(&huart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART1_Init 2 */
+
+  /* USER CODE END USART1_Init 2 */
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -706,6 +900,14 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+  if (htim->Instance == TIM2)
+  {
+    g_uart_send_pending = 1U;
+  }
+}
 
 /* USER CODE END 4 */
 

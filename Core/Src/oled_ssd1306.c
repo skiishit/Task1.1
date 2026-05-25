@@ -8,6 +8,13 @@ static I2C_HandleTypeDef *g_oled_i2c = NULL;
 
 static const uint8_t font_space[6] = {0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U};
 static const uint8_t font_S[6] = {0x46U, 0x49U, 0x49U, 0x49U, 0x31U, 0x00U};
+static const uint8_t font_V[6] = {0x1FU, 0x20U, 0x40U, 0x20U, 0x1FU, 0x00U};
+static const uint8_t font_I[6] = {0x00U, 0x41U, 0x7FU, 0x41U, 0x00U, 0x00U};
+static const uint8_t font_R[6] = {0x7FU, 0x09U, 0x19U, 0x29U, 0x46U, 0x00U};
+static const uint8_t font_A[6] = {0x7EU, 0x11U, 0x11U, 0x11U, 0x7EU, 0x00U};
+static const uint8_t font_colon[6] = {0x00U, 0x36U, 0x36U, 0x00U, 0x00U, 0x00U};
+static const uint8_t font_dot[6] = {0x00U, 0x60U, 0x60U, 0x00U, 0x00U, 0x00U};
+static const uint8_t font_dash[6] = {0x08U, 0x08U, 0x08U, 0x08U, 0x08U, 0x00U};
 static const uint8_t font_digits[10][6] = {
   {0x3EU, 0x51U, 0x49U, 0x45U, 0x3EU, 0x00U},
   {0x00U, 0x42U, 0x7FU, 0x40U, 0x00U, 0x00U},
@@ -26,6 +33,34 @@ static const uint8_t *OLED_Font6x8(char c)
   if (c == 'S')
   {
     return font_S;
+  }
+  if (c == 'V')
+  {
+    return font_V;
+  }
+  if (c == 'I')
+  {
+    return font_I;
+  }
+  if (c == 'R')
+  {
+    return font_R;
+  }
+  if (c == 'A')
+  {
+    return font_A;
+  }
+  if (c == ':')
+  {
+    return font_colon;
+  }
+  if (c == '.')
+  {
+    return font_dot;
+  }
+  if (c == '-')
+  {
+    return font_dash;
   }
   if ((c >= '0') && (c <= '9'))
   {
