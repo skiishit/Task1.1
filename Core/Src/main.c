@@ -76,6 +76,7 @@
 
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
+DMA_HandleTypeDef hdma_adc1;
 
 I2C_HandleTypeDef hi2c3;
 
@@ -116,6 +117,7 @@ static float g_duty_cmd = 0.5f;
 //ADC原始读数
 static uint16_t g_adc_raw_v = 0U;
 static uint16_t g_adc_raw_i = 0U;
+static volatile uint16_t g_adc_dma[2] = {0U, 0U};
 //CV，CC控制器初始化
 static pi_ctrl_t g_pi_cv = {CV_KP, CV_KI, 0.0f, DUTY_MIN, DUTY_MAX};
 static pi_ctrl_t g_pi_cc = {CC_KP, CC_KI, 0.0f, DUTY_MIN, DUTY_MAX};
@@ -126,10 +128,11 @@ static volatile uint8_t g_uart_send_pending = 0U;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_ADC1_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_I2C3_Init(void);
 static void MX_USART1_UART_Init(void);
+static void MX_DMA_Init(void);
+static void MX_ADC1_Init(void);
 static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 
@@ -188,25 +191,8 @@ static float PI_Update(pi_ctrl_t *pi, float setpoint, float feedback, float dt_s
 //
 static void Power_ReadFeedback(void)
 {
-  if (HAL_ADC_Start(&hadc1) != HAL_OK)
-  {
-    return;
-  }
-//轮询等待ADC转换完成，读取电压和电流的原始ADC值，存储在g_adc_raw_v和g_adc_raw_i中
-  if (HAL_ADC_PollForConversion(&hadc1, 5U) != HAL_OK)
-  {
-    (void)HAL_ADC_Stop(&hadc1);
-    return;
-  }
-  g_adc_raw_v = (uint16_t)HAL_ADC_GetValue(&hadc1);
-  if (HAL_ADC_PollForConversion(&hadc1, 5U) != HAL_OK)
-  {
-    (void)HAL_ADC_Stop(&hadc1);
-    return;
-  }
-  g_adc_raw_i = (uint16_t)HAL_ADC_GetValue(&hadc1);
-
-  (void)HAL_ADC_Stop(&hadc1);
+  g_adc_raw_v = g_adc_dma[0];
+  g_adc_raw_i = g_adc_dma[1];
 //根据ADC原始值计算实际电压和电流，并进行简单的IIR滤波，更新g_v/iout_real/filt
   {
     const float vadc_v = ((float)g_adc_raw_v / ADC_FULL_SCALE) * ADC_VREF;
@@ -292,11 +278,19 @@ static void Oled_UpdateDisplay(void)
   const uint16_t vout_frac = (uint16_t)(vout_cv % 100U);
   const uint16_t iout_int = (uint16_t)(iout_da / 10U);
   const uint16_t iout_frac = (uint16_t)(iout_da % 10U);
+  const uint16_t adc_v = g_adc_raw_v;
+  const uint16_t adc_i = g_adc_raw_i;
+  const char mode_c0 = (g_mode == MODE_CV) ? 'C' : 'C';
+  const char mode_c1 = (g_mode == MODE_CV) ? 'V' : 'C';
 
-  (void)snprintf(line0, sizeof(line0), "SV:%02u.%02uV", (unsigned)vset_int, (unsigned)vset_frac);
-  (void)snprintf(line1, sizeof(line1), "SI:%u.%uA", (unsigned)iset_int, (unsigned)iset_frac);
+  (void)snprintf(line0, sizeof(line0), "%c%c SV:%02u.%02uV",
+                 mode_c0, mode_c1, (unsigned)vset_int, (unsigned)vset_frac);
+  (void)snprintf(line1, sizeof(line1), "SI:%u.%uA RI:%u.%uA",
+                 (unsigned)iset_int, (unsigned)iset_frac,
+                 (unsigned)iout_int, (unsigned)iout_frac);
   (void)snprintf(line2, sizeof(line2), "RV:%02u.%02uV", (unsigned)vout_int, (unsigned)vout_frac);
-  (void)snprintf(line3, sizeof(line3), "RI:%u.%uA", (unsigned)iout_int, (unsigned)iout_frac);
+  (void)snprintf(line3, sizeof(line3), "A0:%04u A1:%04u",
+                 (unsigned)adc_v, (unsigned)adc_i);
 
   Oled_WriteLine(0U, line0);
   Oled_WriteLine(2U, line1);
@@ -425,10 +419,11 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_ADC1_Init();
   MX_TIM1_Init();
   MX_I2C3_Init();
   MX_USART1_UART_Init();
+  MX_DMA_Init();
+  MX_ADC1_Init();
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
 
@@ -437,6 +432,11 @@ int main(void)
   OLED_ShowKey(0U);
 
   if (HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  if (HAL_ADC_Start_DMA(&hadc1, (uint32_t *)g_adc_dma, 2U) != HAL_OK)
   {
     Error_Handler();
   }
@@ -579,14 +579,14 @@ static void MX_ADC1_Init(void)
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc1.Init.GainCompensation = 0;
   hadc1.Init.ScanConvMode = ADC_SCAN_ENABLE;
-  hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+  hadc1.Init.EOCSelection = ADC_EOC_SEQ_CONV;
   hadc1.Init.LowPowerAutoWait = DISABLE;
   hadc1.Init.ContinuousConvMode = DISABLE;
   hadc1.Init.NbrOfConversion = 2;
   hadc1.Init.DiscontinuousConvMode = DISABLE;
   hadc1.Init.ExternalTrigConv = ADC_EXTERNALTRIG_T1_TRGO;
   hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_RISING;
-  hadc1.Init.DMAContinuousRequests = DISABLE;
+  hadc1.Init.DMAContinuousRequests = ENABLE;
   hadc1.Init.Overrun = ADC_OVR_DATA_PRESERVED;
   hadc1.Init.OversamplingMode = DISABLE;
   if (HAL_ADC_Init(&hadc1) != HAL_OK)
@@ -845,6 +845,23 @@ static void MX_USART1_UART_Init(void)
   /* USER CODE BEGIN USART1_Init 2 */
 
   /* USER CODE END USART1_Init 2 */
+
+}
+
+/**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMAMUX1_CLK_ENABLE();
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Channel1_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel1_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel1_IRQn);
 
 }
 
