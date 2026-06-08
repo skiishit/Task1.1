@@ -6,6 +6,8 @@
 # Add inputs and outputs from these tool invocations to the build variables 
 C_SRCS += \
 ../Core/Src/keypad.c \
+../Core/Src/lcd_driver.c \
+../Core/Src/lcd_fonts.c \
 ../Core/Src/main.c \
 ../Core/Src/oled_ssd1306.c \
 ../Core/Src/stm32g4xx_hal_msp.c \
@@ -16,6 +18,8 @@ C_SRCS += \
 
 OBJS += \
 ./Core/Src/keypad.o \
+./Core/Src/lcd_driver.o \
+./Core/Src/lcd_fonts.o \
 ./Core/Src/main.o \
 ./Core/Src/oled_ssd1306.o \
 ./Core/Src/stm32g4xx_hal_msp.o \
@@ -26,6 +30,8 @@ OBJS += \
 
 C_DEPS += \
 ./Core/Src/keypad.d \
+./Core/Src/lcd_driver.d \
+./Core/Src/lcd_fonts.d \
 ./Core/Src/main.d \
 ./Core/Src/oled_ssd1306.d \
 ./Core/Src/stm32g4xx_hal_msp.d \
@@ -37,5 +43,5 @@ C_DEPS += \
 
 # Each subdirectory must supply rules for building sources it contributes
 Core/Src/%.o: ../Core/Src/%.c Core/Src/subdir.mk
-	arm-none-eabi-gcc "$<" -mcpu=cortex-m4 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32G474xx -c -I../Core/Inc -I../Drivers/STM32G4xx_HAL_Driver/Inc -I../Drivers/STM32G4xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32G4xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -MMD -MP -MF"$(@:%.o=%.d)" -MT"$@" --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -o "$@"
+	arm-none-eabi-gcc "$<" -mcpu=cortex-m4 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32G474xx -c -I../Core/Inc -I../Drivers/STM32G4xx_HAL_Driver/Inc -I../Drivers/STM32G4xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32G4xx/Include -I../Drivers/CMSIS/Include -I../Drivers/User/Inc -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -MMD -MP -MF"$(@:%.o=%.d)" -MT"$@" --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -o "$@"
 

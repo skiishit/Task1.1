@@ -26,7 +26,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include "keypad.h"
-#include "oled_ssd1306.h"
+#include "lcd_driver.h"
 
 /* USER CODE END Includes */
 
@@ -56,7 +56,7 @@
 #define ADC_VREF                     (3.3f)
 //？？
 /* 按实物标定修改: Vout = Vadc * VOLTAGE_SCALE */
-#define VOLTAGE_SCALE                (10.0f)
+#define VOLTAGE_SCALE                (13.0f)
 /* 按实物标定修改: Iout = (Vadcx - CURRENT_OFFSET_V) * CURRENT_SCALE_A_PER_V */
 #define CURRENT_SCALE_A_PER_V        (1.0f)
 #define CURRENT_OFFSET_V             (0.0f)
@@ -78,7 +78,7 @@
 ADC_HandleTypeDef hadc1;
 DMA_HandleTypeDef hdma_adc1;
 
-I2C_HandleTypeDef hi2c3;
+SPI_HandleTypeDef hspi1;
 
 TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim2;
@@ -129,11 +129,11 @@ static volatile uint8_t g_uart_send_pending = 0U;
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_TIM1_Init(void);
-static void MX_I2C3_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_DMA_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_TIM2_Init(void);
+static void MX_SPI1_Init(void);
 /* USER CODE BEGIN PFP */
 
 static float clampf(float x, float min_val, float max_val);
@@ -145,7 +145,6 @@ static float PI_Update(pi_ctrl_t *pi, float setpoint, float feedback, float dt_s
 static void PI_Reset(pi_ctrl_t *pi, float preload);
 static void Uart_SendSetpoints(void);
 static void Oled_UpdateDisplay(void);
-static void Oled_WriteLine(uint8_t page, const char *text);
 __weak int Keypad_GetKey(void);
 
 /* USER CODE END PFP */
@@ -260,12 +259,22 @@ static void Uart_SendSetpoints(void)
   }
 }
 
+/* 在指定行位置显示一行文本，自动覆盖旧内容 */
+static void LCD_DisplayLine(uint16_t y, char *str)
+{
+  /* 用黑色背景覆盖整行区域（每行20像素高） */
+  LCD_FillArea(0, y, LCD_Width - 1, y + 19, LCD_BLACK);
+  /* 写入新文本 */
+  LCD_SetColor(LCD_WHITE);
+  LCD_DisplayString(0, y, str);
+}
+
 static void Oled_UpdateDisplay(void)
 {
-  char line0[17];
-  char line1[17];
-  char line2[17];
-  char line3[17];
+  char line0[32];
+  char line1[32];
+  char line2[32];
+  char line3[32];
   const uint16_t vset_cv = g_vset_cv;
   const uint8_t iset_da = g_iset_da;
   const uint16_t vset_int = (uint16_t)(vset_cv / 100U);
@@ -292,30 +301,11 @@ static void Oled_UpdateDisplay(void)
   (void)snprintf(line3, sizeof(line3), "A0:%04u A1:%04u",
                  (unsigned)adc_v, (unsigned)adc_i);
 
-  Oled_WriteLine(0U, line0);
-  Oled_WriteLine(2U, line1);
-  Oled_WriteLine(4U, line2);
-  Oled_WriteLine(6U, line3);
-}
-
-static void Oled_WriteLine(uint8_t page, const char *text)
-{
-  char buf[17];
-  uint8_t i = 0U;
-
-  for (i = 0U; i < 16U; ++i)
-  {
-    if ((text != NULL) && (text[i] != '\0'))
-    {
-      buf[i] = text[i];
-    }
-    else
-    {
-      buf[i] = ' ';
-    }
-  }
-  buf[16] = '\0';
-  OLED_ShowString(0U, page, buf);
+  LCD_SetBackColor(LCD_BLACK);
+  LCD_DisplayLine(0, line0);
+  LCD_DisplayLine(20, line1);
+  LCD_DisplayLine(40, line2);
+  LCD_DisplayLine(60, line3);
 }
 //获取按键输入的弱函数，默认实现返回-1表示没有按键被按下，用户可以在其他文件中重定义该函数以实现实际的按键读取逻辑
 __weak int Keypad_GetKey(void)
@@ -420,16 +410,28 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_TIM1_Init();
-  MX_I2C3_Init();
   MX_USART1_UART_Init();
   MX_DMA_Init();
   MX_ADC1_Init();
   MX_TIM2_Init();
+  MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
 
   Keypad_Init();
-  OLED_Init(&hi2c3);
-  OLED_ShowKey(0U);
+  SPI_LCD_Init();
+
+  /* LCD测试：显示 Hello World */
+  LCD_SetBackColor(LCD_BLACK);
+  LCD_Clear();
+  LCD_SetColor(LCD_RED);
+  LCD_DisplayString(0, 0, (char *)"Hello World!");
+  LCD_SetColor(LCD_GREEN);
+  LCD_DisplayString(0, 20, (char *)"LCD Test OK!");
+  LCD_SetColor(LCD_BLUE);
+  LCD_DisplayString(0, 40, (char *)"SPI1 PA5 PA7");
+  LCD_SetColor(LCD_WHITE);
+  LCD_DisplayString(0, 60, (char *)"PB0 BL PB1 DC");
+  HAL_Delay(1000);
 
   if (HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED) != HAL_OK)
   {
@@ -542,10 +544,8 @@ void SystemClock_Config(void)
   }
   /** Initializes the peripherals clocks
   */
-  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USART1|RCC_PERIPHCLK_I2C3
-                              |RCC_PERIPHCLK_ADC12;
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USART1|RCC_PERIPHCLK_ADC12;
   PeriphClkInit.Usart1ClockSelection = RCC_USART1CLKSOURCE_PCLK2;
-  PeriphClkInit.I2c3ClockSelection = RCC_I2C3CLKSOURCE_PCLK1;
   PeriphClkInit.Adc12ClockSelection = RCC_ADC12CLKSOURCE_SYSCLK;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
   {
@@ -604,7 +604,7 @@ static void MX_ADC1_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_1;
   sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_47CYCLES_5;
+  sConfig.SamplingTime = ADC_SAMPLETIME_12CYCLES_5;
   sConfig.SingleDiff = ADC_SINGLE_ENDED;
   sConfig.OffsetNumber = ADC_OFFSET_NONE;
   sConfig.Offset = 0;
@@ -614,7 +614,6 @@ static void MX_ADC1_Init(void)
   }
   /** Configure Regular Channel
   */
-  sConfig.Channel = ADC_CHANNEL_2;
   sConfig.Rank = ADC_REGULAR_RANK_2;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   {
@@ -627,48 +626,42 @@ static void MX_ADC1_Init(void)
 }
 
 /**
-  * @brief I2C3 Initialization Function
+  * @brief SPI1 Initialization Function
   * @param None
   * @retval None
   */
-static void MX_I2C3_Init(void)
+static void MX_SPI1_Init(void)
 {
 
-  /* USER CODE BEGIN I2C3_Init 0 */
+  /* USER CODE BEGIN SPI1_Init 0 */
 
-  /* USER CODE END I2C3_Init 0 */
+  /* USER CODE END SPI1_Init 0 */
 
-  /* USER CODE BEGIN I2C3_Init 1 */
+  /* USER CODE BEGIN SPI1_Init 1 */
 
-  /* USER CODE END I2C3_Init 1 */
-  hi2c3.Instance = I2C3;
-  hi2c3.Init.Timing = 0x30A0A7FB;
-  hi2c3.Init.OwnAddress1 = 0;
-  hi2c3.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
-  hi2c3.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
-  hi2c3.Init.OwnAddress2 = 0;
-  hi2c3.Init.OwnAddress2Masks = I2C_OA2_NOMASK;
-  hi2c3.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
-  hi2c3.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
-  if (HAL_I2C_Init(&hi2c3) != HAL_OK)
+  /* USER CODE END SPI1_Init 1 */
+  /* SPI1 parameter configuration*/
+  hspi1.Instance = SPI1;
+  hspi1.Init.Mode = SPI_MODE_MASTER;
+  hspi1.Init.Direction = SPI_DIRECTION_2LINES;
+  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
+  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
+  hspi1.Init.NSS = SPI_NSS_SOFT;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32;
+  hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
+  hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
+  hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+  hspi1.Init.CRCPolynomial = 7;
+  hspi1.Init.CRCLength = SPI_CRC_LENGTH_DATASIZE;
+  hspi1.Init.NSSPMode = SPI_NSS_PULSE_DISABLE;
+  if (HAL_SPI_Init(&hspi1) != HAL_OK)
   {
     Error_Handler();
   }
-  /** Configure Analogue filter
-  */
-  if (HAL_I2CEx_ConfigAnalogFilter(&hi2c3, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /** Configure Digital filter
-  */
-  if (HAL_I2CEx_ConfigDigitalFilter(&hi2c3, 0) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN I2C3_Init 2 */
+  /* USER CODE BEGIN SPI1_Init 2 */
 
-  /* USER CODE END I2C3_Init 2 */
+  /* USER CODE END SPI1_Init 2 */
 
 }
 
@@ -878,11 +871,14 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOF_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
-  __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
+  __HAL_RCC_GPIOD_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(USER_KEY_GPIO_Port, USER_KEY_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOB, LCD_BL_Pin|LCD_DC_Pin|LCD_CS_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOD, ROW1_Pin|ROW2_Pin|ROW3_Pin|ROW4_Pin, GPIO_PIN_RESET);
@@ -893,6 +889,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(USER_KEY_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : LCD_BL_Pin LCD_DC_Pin LCD_CS_Pin */
+  GPIO_InitStruct.Pin = LCD_BL_Pin|LCD_DC_Pin|LCD_CS_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /*Configure GPIO pins : ROW1_Pin ROW2_Pin ROW3_Pin ROW4_Pin */
   GPIO_InitStruct.Pin = ROW1_Pin|ROW2_Pin|ROW3_Pin|ROW4_Pin;
