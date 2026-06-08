@@ -58,15 +58,15 @@
 /* 按实物标定修改: Vout = Vadc * VOLTAGE_SCALE */
 #define VOLTAGE_SCALE                (13.0f)
 /* 按实物标定修改: Iout = (Vadcx - CURRENT_OFFSET_V) * CURRENT_SCALE_A_PER_V */
-#define CURRENT_SCALE_A_PER_V        (1.0f)
+#define CURRENT_SCALE_A_PER_V        (2.5f)
 #define CURRENT_OFFSET_V             (0.0f)
 
 #define IIR_ALPHA                    (0.2f)
 
-#define CV_KP                        (0.045f)
-#define CV_KI                        (6.0f)
-#define CC_KP                        (0.08f)
-#define CC_KI                        (8.0f)
+#define CV_KP                        (0.00045f)
+#define CV_KI                        (0.06f)
+#define CC_KP                        (0.0008f)
+#define CC_KI                        (0.008f)
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -289,7 +289,7 @@ static void Oled_UpdateDisplay(void)
   const uint16_t iout_frac = (uint16_t)(iout_da % 10U);
   const uint16_t adc_v = g_adc_raw_v;
   const uint16_t adc_i = g_adc_raw_i;
-  const char mode_c0 = (g_mode == MODE_CV) ? 'C' : 'C';
+  const char mode_c0 = 'C';
   const char mode_c1 = (g_mode == MODE_CV) ? 'V' : 'C';
 
   (void)snprintf(line0, sizeof(line0), "%c%c SV:%02u.%02uV",
@@ -302,10 +302,10 @@ static void Oled_UpdateDisplay(void)
                  (unsigned)adc_v, (unsigned)adc_i);
 
   LCD_SetBackColor(LCD_BLACK);
-  LCD_DisplayLine(0, line0);
-  LCD_DisplayLine(20, line1);
-  LCD_DisplayLine(40, line2);
-  LCD_DisplayLine(60, line3);
+  LCD_DisplayLine(100, line0);
+  LCD_DisplayLine(120, line1);
+  LCD_DisplayLine(140, line2);
+  LCD_DisplayLine(160, line3);
 }
 //获取按键输入的弱函数，默认实现返回-1表示没有按键被按下，用户可以在其他文件中重定义该函数以实现实际的按键读取逻辑
 __weak int Keypad_GetKey(void)
@@ -614,6 +614,7 @@ static void MX_ADC1_Init(void)
   }
   /** Configure Regular Channel
   */
+  sConfig.Channel = ADC_CHANNEL_2;
   sConfig.Rank = ADC_REGULAR_RANK_2;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   {
@@ -654,7 +655,7 @@ static void MX_SPI1_Init(void)
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
   hspi1.Init.CRCPolynomial = 7;
   hspi1.Init.CRCLength = SPI_CRC_LENGTH_DATASIZE;
-  hspi1.Init.NSSPMode = SPI_NSS_PULSE_DISABLE;
+  hspi1.Init.NSSPMode = SPI_NSS_PULSE_ENABLE;
   if (HAL_SPI_Init(&hspi1) != HAL_OK)
   {
     Error_Handler();
@@ -727,7 +728,7 @@ static void MX_TIM1_Init(void)
   sBreakDeadTimeConfig.OffStateRunMode = TIM_OSSR_DISABLE;
   sBreakDeadTimeConfig.OffStateIDLEMode = TIM_OSSI_DISABLE;
   sBreakDeadTimeConfig.LockLevel = TIM_LOCKLEVEL_OFF;
-  sBreakDeadTimeConfig.DeadTime = 9;
+  sBreakDeadTimeConfig.DeadTime = 24;
   sBreakDeadTimeConfig.BreakState = TIM_BREAK_DISABLE;
   sBreakDeadTimeConfig.BreakPolarity = TIM_BREAKPOLARITY_HIGH;
   sBreakDeadTimeConfig.BreakFilter = 0;
