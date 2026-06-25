@@ -38,35 +38,35 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-#define CTRL_PERIOD_MS               (1U)  //¿ØÖÆÑ­»·ÖÜÆÚ£¬ms
-#define CTRL_PERIOD_S                (0.001f)//ÓÃÃë±íÊ¾¿ØÖÆÑ­»·ÖÜÆÚ£¬0.001s
-//PWM×îÐ¡/×î´óÕ¼¿Õ±È
+#define CTRL_PERIOD_MS               (1U)  //ï¿½ï¿½ï¿½ï¿½Ñ­ï¿½ï¿½ï¿½ï¿½ï¿½Ú£ï¿½ms
+#define CTRL_PERIOD_S                (0.001f)//ï¿½ï¿½ï¿½ï¿½ï¿½Ê¾ï¿½ï¿½ï¿½ï¿½Ñ­ï¿½ï¿½ï¿½ï¿½ï¿½Ú£ï¿½0.001s
+//PWMï¿½ï¿½Ð¡/ï¿½ï¿½ï¿½Õ¼ï¿½Õ±ï¿½
 #define DUTY_MIN                     (0.02f)
 #define DUTY_MAX                     (0.95f)
-//µçÑ¹Éè¶¨ÉÏÏÂÏÞºÍ²½³¤
+//ï¿½ï¿½Ñ¹ï¿½è¶¨ï¿½ï¿½ï¿½ï¿½ï¿½ÞºÍ²ï¿½ï¿½ï¿½
 #define VOUT_SET_MIN_CV              (200U)   /* 2.00V  */
 #define VOUT_SET_MAX_CV              (3300U)  /* 33.00V */
 #define VOUT_SET_STEP_CV             (2U)     /* 0.02V  */
-//µçÁ÷Éè¶¨ÉÏÏÂÏÞºÍ²½³¤
+//ï¿½ï¿½ï¿½ï¿½ï¿½è¶¨ï¿½ï¿½ï¿½ï¿½ï¿½ÞºÍ²ï¿½ï¿½ï¿½
 #define IOUT_SET_MIN_DA              (1U)     /* 0.1A */
 #define IOUT_SET_MAX_DA              (20U)    /* 2.0A */
 #define IOUT_SET_STEP_DA             (1U)     /* 0.1A */
-//ADCÂú¿Ì¶È
+//ADCï¿½ï¿½ï¿½Ì¶ï¿½
 #define ADC_FULL_SCALE               (4095.0f)
 #define ADC_VREF                     (3.3f)
-//£¿£¿
-/* °´ÊµÎï±ê¶¨ÐÞ¸Ä: Vout = Vadc * VOLTAGE_SCALE */
+//ï¿½ï¿½ï¿½ï¿½
+/* ï¿½ï¿½Êµï¿½ï¿½ê¶¨ï¿½Þ¸ï¿½: Vout = Vadc * VOLTAGE_SCALE */
 #define VOLTAGE_SCALE                (13.0f)
-/* °´ÊµÎï±ê¶¨ÐÞ¸Ä: Iout = (Vadcx - CURRENT_OFFSET_V) * CURRENT_SCALE_A_PER_V */
+/* ï¿½ï¿½Êµï¿½ï¿½ê¶¨ï¿½Þ¸ï¿½: Iout = (Vadcx - CURRENT_OFFSET_V) * CURRENT_SCALE_A_PER_V */
 #define CURRENT_SCALE_A_PER_V        (2.5f)
 #define CURRENT_OFFSET_V             (0.0f)
 
 #define IIR_ALPHA                    (0.2f)
 
-#define CV_KP                        (0.00045f)
-#define CV_KI                        (0.06f)
-#define CC_KP                        (0.0008f)
-#define CC_KI                        (0.008f)
+#define CV_KP                        (0.125f)
+#define CV_KI                        (0.594f)
+#define CC_KP                        (0.0024f)
+#define CC_KI                        (0.024f)
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -91,7 +91,7 @@ typedef enum
 {
   MODE_CV = 0,
   MODE_CC = 1
-} control_mode_t;  //¿ØÖÆÄ£Ê½£ººãÑ¹£¨CV£©»òºãÁ÷£¨CC£©
+} control_mode_t;  //ï¿½ï¿½ï¿½ï¿½Ä£Ê½ï¿½ï¿½ï¿½ï¿½Ñ¹ï¿½ï¿½CVï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½CCï¿½ï¿½
 
 typedef struct
 {
@@ -100,28 +100,42 @@ typedef struct
   float integral;
   float out_min;
   float out_max;
-} pi_ctrl_t;  //PI¿ØÖÆÆ÷²ÎÊýºÍ×´Ì¬£¿£¿
+} pi_ctrl_t;  //PIï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½×´Ì¬ï¿½ï¿½ï¿½ï¿½
 
-static control_mode_t g_mode = MODE_CV;  //µ±Ç°¿ØÖÆÄ£Ê½
+typedef enum
+{
+  DISPLAY_NORMAL = 0,
+  DISPLAY_EDIT,
+  DISPLAY_MSG_CANCEL,
+  DISPLAY_MSG_CONFIRM
+} display_state_t;
 
-//µçÑ¹Ä¿±êÁ¿ºÍµçÁ÷Ä¿±êÁ¿£¬µ¥Î»·Ö±ðÊÇ0.01VºÍ0.1A£¬³õÊ¼Öµ·Ö±ðÊÇ5.00VºÍ1.0A
+static control_mode_t g_mode = MODE_CV;  //ï¿½ï¿½Ç°ï¿½ï¿½ï¿½ï¿½Ä£Ê½
+
+//ï¿½ï¿½Ñ¹Ä¿ï¿½ï¿½ï¿½ï¿½ï¿½Íµï¿½ï¿½ï¿½Ä¿ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Î»ï¿½Ö±ï¿½ï¿½ï¿½0.01Vï¿½ï¿½0.1Aï¿½ï¿½ï¿½ï¿½Ê¼Öµï¿½Ö±ï¿½ï¿½ï¿½5.00Vï¿½ï¿½1.0A
 static uint16_t g_vset_cv = 500U; /* 5.00V */
 static uint8_t g_iset_da = 10U;   /* 1.0A */
-//Êä³öµçÑ¹ºÍµçÁ÷µÄ²âÁ¿ÖµºÍÂË²¨ºóµÄÖµ
+//ï¿½ï¿½ï¿½ï¿½ï¿½Ñ¹ï¿½Íµï¿½ï¿½ï¿½ï¿½Ä²ï¿½ï¿½ï¿½Öµï¿½ï¿½ï¿½Ë²ï¿½ï¿½ï¿½ï¿½Öµ
 static float g_vout_real = 0.0f;
 static float g_iout_real = 0.0f;
 static float g_vout_filt = 0.0f;
 static float g_iout_filt = 0.0f;
-//µ±Ç°Ä¿±êÕ¼¿Õ±È£¬³õÊ¼ÖµÎª0.5£¨50%£©
+//ï¿½ï¿½Ç°Ä¿ï¿½ï¿½Õ¼ï¿½Õ±È£ï¿½ï¿½ï¿½Ê¼ÖµÎª0.5ï¿½ï¿½50%ï¿½ï¿½
 static float g_duty_cmd = 0.5f;
-//ADCÔ­Ê¼¶ÁÊý
+//ADCÔ­Ê¼ï¿½ï¿½ï¿½ï¿½
 static uint16_t g_adc_raw_v = 0U;
 static uint16_t g_adc_raw_i = 0U;
 static volatile uint16_t g_adc_dma[2] = {0U, 0U};
-//CV£¬CC¿ØÖÆÆ÷³õÊ¼»¯
+//CVï¿½ï¿½CCï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê¼ï¿½ï¿½
 static pi_ctrl_t g_pi_cv = {CV_KP, CV_KI, 0.0f, DUTY_MIN, DUTY_MAX};
 static pi_ctrl_t g_pi_cc = {CC_KP, CC_KI, 0.0f, DUTY_MIN, DUTY_MAX};
 static volatile uint8_t g_uart_send_pending = 0U;
+
+//ï¿½à¼­Ä£Ê½ï¿½ï¿½Ø±ï¿½ï¿½ï¿½
+static display_state_t g_display_state = DISPLAY_NORMAL;
+static uint8_t g_edit_buf[6];     // ï¿½æ´¢6Î»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½: [V1,V2,Vf1,Vf2, I1,If1]
+static uint8_t g_edit_idx = 0;    // ï¿½ï¿½Ç°ï¿½ï¿½ï¿½ï¿½Î»ï¿½ï¿½ 0~5
+static uint32_t g_msg_tick = 0;   // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ï¢ï¿½ï¿½Ê¾ï¿½ï¿½Ê±
 
 /* USER CODE END PV */
 
@@ -152,7 +166,7 @@ __weak int Keypad_GetKey(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-//£¿£¿
+//ï¿½ï¿½ï¿½ï¿½
 static float clampf(float x, float min_val, float max_val)  
 {
   if (x < min_val)
@@ -165,23 +179,23 @@ static float clampf(float x, float min_val, float max_val)
   }
   return x;
 }
-//PI¿ØÖÆÆ÷ÖØÖÃº¯Êý£¬½«pi->integralÉèÖÃÎªÔ¤¼ÓÔØÖµpreload£¬·ÀÖ¹Ä£Ê½ÇÐ»»Ê±»ý·ÖÏîÒýÆðµÄÍ»±ä
+//PIï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ãºï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½pi->integralï¿½ï¿½ï¿½ï¿½ÎªÔ¤ï¿½ï¿½ï¿½ï¿½Öµpreloadï¿½ï¿½ï¿½ï¿½Ö¹Ä£Ê½ï¿½Ð»ï¿½Ê±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í»ï¿½ï¿½
 static void PI_Reset(pi_ctrl_t *pi, float preload)
 {
   pi->integral = preload;
 }
-//PI¿ØÖÆÆ÷¸üÐÂº¯Êý£¬¸ù¾ÝÉè¶¨Öµsetpoint¡¢·´À¡ÖµfeedbackºÍÊ±¼ä²½³¤dt_s¼ÆËãÐÂµÄ¿ØÖÆÊä³ö
+//PIï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Âºï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½è¶¨Öµsetpointï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Öµfeedbackï¿½ï¿½Ê±ï¿½ä²½ï¿½ï¿½dt_sï¿½ï¿½ï¿½ï¿½ï¿½ÂµÄ¿ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 static float PI_Update(pi_ctrl_t *pi, float setpoint, float feedback, float dt_s)
 {
-  const float err = setpoint - feedback;  //Îó²î
-  const float p_term = pi->kp * err;  //±ÈÀýÏî
-  float out = p_term + pi->integral;  //ÁÙÊ±Êä³ö
+  const float err = setpoint - feedback;  //ï¿½ï¿½ï¿½
+  const float p_term = pi->kp * err;  //ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+  float out = p_term + pi->integral;  //ï¿½ï¿½Ê±ï¿½ï¿½ï¿½
 
   if ((out > pi->out_min) && (out < pi->out_max))
   {
-    pi->integral += pi->ki * err * dt_s;  //½öµ±Êä³öÎ´±¥ºÍÊ±²Å¸üÐÂ»ý·ÖÏî£¬·ÀÖ¹»ý·Ö±¥ºÍ
+    pi->integral += pi->ki * err * dt_s;  //ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Î´ï¿½ï¿½ï¿½ï¿½Ê±ï¿½Å¸ï¿½ï¿½Â»ï¿½ï¿½ï¿½ï¿½î£¬ï¿½ï¿½Ö¹ï¿½ï¿½ï¿½Ö±ï¿½ï¿½ï¿½
   }
-  //¸üÐÂÊä³öout
+  //ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½out
   pi->integral = clampf(pi->integral, pi->out_min, pi->out_max);
   out = p_term + pi->integral;
   out = clampf(out, pi->out_min, pi->out_max);
@@ -192,7 +206,7 @@ static void Power_ReadFeedback(void)
 {
   g_adc_raw_v = g_adc_dma[0];
   g_adc_raw_i = g_adc_dma[1];
-//¸ù¾ÝADCÔ­Ê¼Öµ¼ÆËãÊµ¼ÊµçÑ¹ºÍµçÁ÷£¬²¢½øÐÐ¼òµ¥µÄIIRÂË²¨£¬¸üÐÂg_v/iout_real/filt
+//ï¿½ï¿½ï¿½ï¿½ADCÔ­Ê¼Öµï¿½ï¿½ï¿½ï¿½Êµï¿½Êµï¿½Ñ¹ï¿½Íµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð¼òµ¥µï¿½IIRï¿½Ë²ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½g_v/iout_real/filt
   {
     const float vadc_v = ((float)g_adc_raw_v / ADC_FULL_SCALE) * ADC_VREF;
     const float vadc_i = ((float)g_adc_raw_i / ADC_FULL_SCALE) * ADC_VREF;
@@ -208,20 +222,20 @@ static void Power_ReadFeedback(void)
     g_iout_filt += IIR_ALPHA * (g_iout_real - g_iout_filt);
   }
 }
-//¸ù¾Ý¼ÆËãµÃµ½µÄÕ¼¿Õ±Èduty£¬¸üÐÂTIM1Í¨µÀ1µÄ±È½Ï¼Ä´æÆ÷Öµ£¬´Ó¶øµ÷ÕûPWMÊä³öÕ¼¿Õ±È
+//ï¿½ï¿½ï¿½Ý¼ï¿½ï¿½ï¿½Ãµï¿½ï¿½ï¿½Õ¼ï¿½Õ±ï¿½dutyï¿½ï¿½ï¿½ï¿½ï¿½ï¿½TIM1Í¨ï¿½ï¿½1ï¿½Ä±È½Ï¼Ä´ï¿½ï¿½ï¿½Öµï¿½ï¿½ï¿½Ó¶ï¿½ï¿½ï¿½ï¿½ï¿½PWMï¿½ï¿½ï¿½Õ¼ï¿½Õ±ï¿½
 static void Power_ApplyDuty(float duty)
 {
-  const uint32_t period = __HAL_TIM_GET_AUTORELOAD(&htim1) + 1U;//ÓÃÓÚ¶ÁÈ¡¶¨Ê±Æ÷×Ô¶¯ÖØ×°ÔØÖµ
-  uint32_t ccr = (uint32_t)(duty * (float)period);//¸ù¾ÝÕ¼¿Õ±È¼ÆËã±È½Ï¼Ä´æÆ÷ÖµCCR
+  const uint32_t period = __HAL_TIM_GET_AUTORELOAD(&htim1) + 1U;//ï¿½ï¿½ï¿½Ú¶ï¿½È¡ï¿½ï¿½Ê±ï¿½ï¿½ï¿½Ô¶ï¿½ï¿½ï¿½×°ï¿½ï¿½Öµ
+  uint32_t ccr = (uint32_t)(duty * (float)period);//ï¿½ï¿½ï¿½ï¿½Õ¼ï¿½Õ±È¼ï¿½ï¿½ï¿½È½Ï¼Ä´ï¿½ï¿½ï¿½ÖµCCR
 
   if (ccr >= period)
   {
     ccr = period - 1U;
   }
 
-  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, ccr);//ÉèÖÃTIM1Í¨µÀ1µÄ±È½Ï¼Ä´æÆ÷Öµ£¬¸üÐÂPWMÕ¼¿Õ±È
+  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, ccr);//ï¿½ï¿½ï¿½ï¿½TIM1Í¨ï¿½ï¿½1ï¿½Ä±È½Ï¼Ä´ï¿½ï¿½ï¿½Öµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½PWMÕ¼ï¿½Õ±ï¿½
 }
-//¸ù¾Ýµ±Ç°¿ØÖÆÄ£Ê½£¨CV»òCC£©£¬Ê¹ÓÃ¶ÔÓ¦µÄPI¿ØÖÆÆ÷¼ÆËãÐÂµÄÕ¼¿Õ±ÈÃüÁî£¬²¢Ó¦ÓÃµ½PWMÊä³ö
+//ï¿½ï¿½ï¿½Ýµï¿½Ç°ï¿½ï¿½ï¿½ï¿½Ä£Ê½ï¿½ï¿½CVï¿½ï¿½CCï¿½ï¿½ï¿½ï¿½Ê¹ï¿½Ã¶ï¿½Ó¦ï¿½ï¿½PIï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Âµï¿½Õ¼ï¿½Õ±ï¿½ï¿½ï¿½ï¿½î£¬ï¿½ï¿½Ó¦ï¿½Ãµï¿½PWMï¿½ï¿½ï¿½
 static void Power_ControlStep(float dt_s)
 {
   const float vset = (float)g_vset_cv * 0.01f;
@@ -259,12 +273,12 @@ static void Uart_SendSetpoints(void)
   }
 }
 
-/* ÔÚÖ¸¶¨ÐÐÎ»ÖÃÏÔÊ¾Ò»ÐÐÎÄ±¾£¬×Ô¶¯¸²¸Ç¾ÉÄÚÈÝ */
+/* ï¿½ï¿½Ö¸ï¿½ï¿½ï¿½ï¿½Î»ï¿½ï¿½ï¿½ï¿½Ê¾Ò»ï¿½ï¿½ï¿½Ä±ï¿½ï¿½ï¿½ï¿½Ô¶ï¿½ï¿½ï¿½ï¿½Ç¾ï¿½ï¿½ï¿½ï¿½ï¿½ */
 static void LCD_DisplayLine(uint16_t y, char *str)
 {
-  /* ÓÃºÚÉ«±³¾°¸²¸ÇÕûÐÐÇøÓò£¨Ã¿ÐÐ20ÏñËØ¸ß£© */
+  /* ï¿½Ãºï¿½É«ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ã¿ï¿½ï¿½20ï¿½ï¿½ï¿½Ø¸ß£ï¿½ */
   LCD_FillArea(0, y, LCD_Width - 1, y + 19, LCD_BLACK);
-  /* Ð´ÈëÐÂÎÄ±¾ */
+  /* Ð´ï¿½ï¿½ï¿½ï¿½ï¿½Ä±ï¿½ */
   LCD_SetColor(LCD_WHITE);
   LCD_DisplayString(0, y, str);
 }
@@ -275,6 +289,87 @@ static void Oled_UpdateDisplay(void)
   char line1[32];
   char line2[32];
   char line3[32];
+
+  /* ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ï¢ï¿½ï¿½Ê¾ï¿½ï¿½CANCEL / CONFIRM 1ï¿½ï¿½ï¿½ï¿½Ô¶ï¿½ï¿½Ë»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½æ£© */
+  if (g_display_state == DISPLAY_MSG_CANCEL)
+  {
+    if (HAL_GetTick() - g_msg_tick >= 1000U)
+    {
+      g_display_state = DISPLAY_NORMAL;
+    }
+  }
+  else if (g_display_state == DISPLAY_MSG_CONFIRM)
+  {
+    if (HAL_GetTick() - g_msg_tick >= 1000U)
+    {
+      g_display_state = DISPLAY_NORMAL;
+    }
+  }
+
+  /* ï¿½à¼­Ä£Ê½ï¿½ï¿½ï¿½ï¿½Ê¾ï¿½à¼­ï¿½ï¿½ï¿½ï¿½ */
+  if (g_display_state == DISPLAY_EDIT)
+  {
+    char sv_buf[8];
+    char si_buf[8];
+    uint8_t i;
+
+    /* ï¿½ï¿½ï¿½ï¿½SVï¿½Ö·ï¿½ï¿½ï¿½: xx.xxVï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ë²¿ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö£ï¿½Î´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½'x' */
+    for (i = 0; i < 4; i++)
+    {
+      if (i < g_edit_idx)
+        sv_buf[i] = (char)('0' + g_edit_buf[i]);
+      else
+        sv_buf[i] = 'x';
+    }
+    sv_buf[4] = '\0';
+    /* ï¿½ï¿½ï¿½ï¿½SIï¿½Ö·ï¿½ï¿½ï¿½: x.xAï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ë²¿ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö£ï¿½Î´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½'x' */
+    for (i = 0; i < 2; i++)
+    {
+      if ((i + 4) < g_edit_idx)
+        si_buf[i] = (char)('0' + g_edit_buf[i + 4]);
+      else
+        si_buf[i] = 'x';
+    }
+    si_buf[2] = '\0';
+
+    (void)snprintf(line0, sizeof(line0), "SV: %c%c.%c%cV  SI: %c.%cA",
+                   sv_buf[0], sv_buf[1], sv_buf[2], sv_buf[3],
+                   si_buf[0], si_buf[1]);
+    (void)snprintf(line1, sizeof(line1), "D: CONFIRM");
+    (void)snprintf(line2, sizeof(line2), "*: CANCEL");
+    (void)snprintf(line3, sizeof(line3), "#: Redo");
+
+    LCD_SetBackColor(LCD_BLACK);
+    LCD_DisplayLine(100, line0);
+    LCD_DisplayLine(120, line1);
+    LCD_DisplayLine(140, line2);
+    LCD_DisplayLine(160, line3);
+    return;
+  }
+
+  /* ï¿½ï¿½Ê¾CANCELï¿½ï¿½Ï¢ */
+  if (g_display_state == DISPLAY_MSG_CANCEL)
+  {
+    LCD_SetBackColor(LCD_BLACK);
+    LCD_FillArea(0, 100, LCD_Width - 1, 179, LCD_BLACK);
+    LCD_SetColor(LCD_RED);
+    LCD_SetBackColor(LCD_BLACK);
+    LCD_DisplayLine(130, (char *)"CANCEL");
+    return;
+  }
+
+  /* ï¿½ï¿½Ê¾CONFIRMï¿½ï¿½Ï¢ */
+  if (g_display_state == DISPLAY_MSG_CONFIRM)
+  {
+    LCD_SetBackColor(LCD_BLACK);
+    LCD_FillArea(0, 100, LCD_Width - 1, 179, LCD_BLACK);
+    LCD_SetColor(LCD_GREEN);
+    LCD_SetBackColor(LCD_BLACK);
+    LCD_DisplayLine(130, (char *)"CONFIRM");
+    return;
+  }
+
+  /* ========== ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê¾ ========== */
   const uint16_t vset_cv = g_vset_cv;
   const uint8_t iset_da = g_iset_da;
   const uint16_t vset_int = (uint16_t)(vset_cv / 100U);
@@ -307,12 +402,33 @@ static void Oled_UpdateDisplay(void)
   LCD_DisplayLine(140, line2);
   LCD_DisplayLine(160, line3);
 }
-//»ñÈ¡°´¼üÊäÈëµÄÈõº¯Êý£¬Ä¬ÈÏÊµÏÖ·µ»Ø-1±íÊ¾Ã»ÓÐ°´¼ü±»°´ÏÂ£¬ÓÃ»§¿ÉÒÔÔÚÆäËûÎÄ¼þÖÐÖØ¶¨Òå¸Ãº¯ÊýÒÔÊµÏÖÊµ¼ÊµÄ°´¼ü¶ÁÈ¡Âß¼­
+//ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä¬ï¿½ï¿½Êµï¿½Ö·ï¿½ï¿½ï¿½-1ï¿½ï¿½Ê¾Ã»ï¿½Ð°ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Â£ï¿½ï¿½Ã»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½Ø¶ï¿½ï¿½ï¿½Ãºï¿½ï¿½ï¿½ï¿½ï¿½Êµï¿½ï¿½Êµï¿½ÊµÄ°ï¿½ï¿½ï¿½ï¿½ï¿½È¡ï¿½ß¼ï¿½
 __weak int Keypad_GetKey(void)
 {
   return -1;
 }
-//´¦Àí¼üÅÌÊäÈë£¬¸ù¾Ý°´¼üµ÷Õû¿ØÖÆÄ£Ê½¡¢Éè¶¨ÖµµÈ²ÎÊý
+
+//ï¿½Ó±à¼­ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ã»ï¿½ï¿½ï¿½ï¿½ë²¢ï¿½ï¿½ï¿½ï¿½ï¿½è¶¨Öµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Î§ï¿½Þ¶ï¿½ï¿½ï¿½
+static void Edit_ApplyValues(void)
+{
+  /* g_edit_buf: [V1,V2,Vf1,Vf2, I1,If1]
+     ï¿½ï¿½Ñ¹: V1V2.Vf1Vf2 (ï¿½ï¿½Î»ï¿½ï¿½ï¿½ï¿½+ï¿½ï¿½Î»Ð¡ï¿½ï¿½)
+     ï¿½ï¿½ï¿½ï¿½: I1.If1 (Ò»Î»ï¿½ï¿½ï¿½ï¿½+Ò»Î»Ð¡ï¿½ï¿½) */
+  uint16_t new_vset = (uint16_t)(g_edit_buf[0] * 1000U + g_edit_buf[1] * 100U
+                               + g_edit_buf[2] * 10U + g_edit_buf[3]);
+  uint8_t new_iset = (uint8_t)(g_edit_buf[4] * 10U + g_edit_buf[5]);
+
+  /* ï¿½Þ¶ï¿½ï¿½ï¿½Î§ */
+  if (new_vset < VOUT_SET_MIN_CV) new_vset = VOUT_SET_MIN_CV;
+  if (new_vset > VOUT_SET_MAX_CV) new_vset = VOUT_SET_MAX_CV;
+  if (new_iset < IOUT_SET_MIN_DA) new_iset = IOUT_SET_MIN_DA;
+  if (new_iset > IOUT_SET_MAX_DA) new_iset = IOUT_SET_MAX_DA;
+
+  g_vset_cv = new_vset;
+  g_iset_da = new_iset;
+}
+
+//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ë£¬ï¿½ï¿½ï¿½Ý°ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä£Ê½ï¿½ï¿½ï¿½è¶¨Öµï¿½È²ï¿½ï¿½ï¿½
 static void Power_HandleKeyboard(void)
 {
   const int key = Keypad_GetKey();
@@ -326,6 +442,52 @@ static void Power_HandleKeyboard(void)
     HAL_GPIO_TogglePin(USER_KEY_GPIO_Port, USER_KEY_Pin);
   }
 
+  /* ï¿½ï¿½ï¿½ï¿½ï¿½CANCEL/CONFIRMï¿½ï¿½Ï¢ï¿½ï¿½Ê¾×´Ì¬ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð°ï¿½ï¿½ï¿½ */
+  if ((g_display_state == DISPLAY_MSG_CANCEL) ||
+      (g_display_state == DISPLAY_MSG_CONFIRM))
+  {
+    return;
+  }
+
+  /* ---- ï¿½à¼­Ä£Ê½ï¿½ÂµÄ°ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ---- */
+  if (g_display_state == DISPLAY_EDIT)
+  {
+    switch ((char)key)
+    {
+      case '0': case '1': case '2': case '3': case '4':
+      case '5': case '6': case '7': case '8': case '9':
+        if (g_edit_idx < 6)
+        {
+          g_edit_buf[g_edit_idx] = (uint8_t)((char)key - '0');
+          g_edit_idx++;
+        }
+        break;
+
+      case '#':   /* Redo: ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ */
+        g_edit_idx = 0;
+        break;
+
+      case '*':   /* Cancel: ï¿½ï¿½Ê¾CANCELï¿½ï¿½ï¿½Ë»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ */
+        g_display_state = DISPLAY_MSG_CANCEL;
+        g_msg_tick = HAL_GetTick();
+        break;
+
+      case 'D':   /* Confirm: Ó¦ï¿½ï¿½ï¿½Þ¸Ä£ï¿½ï¿½ï¿½Ê¾CONFIRMï¿½ï¿½ï¿½Ë»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ */
+        if (g_edit_idx >= 6)
+        {
+          Edit_ApplyValues();
+        }
+        g_display_state = DISPLAY_MSG_CONFIRM;
+        g_msg_tick = HAL_GetTick();
+        break;
+
+      default:
+        break;
+    }
+    return;
+  }
+
+  /* ---- ï¿½ï¿½ï¿½ï¿½Ä£Ê½ï¿½ï¿½ï¿½Ç±à¼­ï¿½ï¿½ï¿½ÂµÄ°ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ---- */
   switch ((char)key)
   {
     case 'A':
@@ -336,6 +498,11 @@ static void Power_HandleKeyboard(void)
     case 'B':
       g_mode = MODE_CC;
       PI_Reset(&g_pi_cc, g_duty_cmd);
+      break;
+
+    case 'C':   /* ï¿½ï¿½ï¿½ï¿½à¼­Ä£Ê½ */
+      g_display_state = DISPLAY_EDIT;
+      g_edit_idx = 0;
       break;
 
     case '2':
@@ -420,7 +587,7 @@ int main(void)
   Keypad_Init();
   SPI_LCD_Init();
 
-  /* LCD²âÊÔ£ºÏÔÊ¾ Hello World */
+  /* LCDï¿½ï¿½ï¿½Ô£ï¿½ï¿½ï¿½Ê¾ Hello World */
   LCD_SetBackColor(LCD_BLACK);
   LCD_Clear();
   LCD_SetColor(LCD_RED);
