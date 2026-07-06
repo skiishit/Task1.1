@@ -63,10 +63,16 @@
 
 #define IIR_ALPHA                    (0.2f)
 
-#define CV_KP                        (0.125f)
-#define CV_KI                        (0.594f)
+#define CV_KP                        (0.100f)
+#define CV_KI                        (10.00f)
 #define CC_KP                        (0.0024f)
 #define CC_KI                        (0.024f)
+//软启动: 从最小占空比到PI目标的斜坡时间
+#define SOFTSTART_MS                 (100U)   // 100ms斜坡
+//滑动平均窗口: 电压一直保持100点滑动平均 + IIR叠加滤波
+#define ADC_MA_WINDOW                (100U)    // 滑动平均窗口大小
+//设定值平滑变化: 每控制周期(1ms)设定值最大变化量(0.01V单位, 0.04V/cycle = 40V/s)
+#define VOUT_SLEW_RATE_CV            (4U)     // 0.04V per 1ms, 单位0.01V
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -120,16 +126,26 @@ static float g_vout_real = 0.0f;
 static float g_iout_real = 0.0f;
 static float g_vout_filt = 0.0f;
 static float g_iout_filt = 0.0f;
-//��ǰĿ��ռ�ձȣ���ʼֵΪ0.5��50%��
-static float g_duty_cmd = 0.5f;
-//ADCԭʼ����
+//当前目标占空比，初始化为最小占空比（安全启动）
+static float g_duty_cmd = DUTY_MIN;
+//ADC原始数据
 static uint16_t g_adc_raw_v = 0U;
 static uint16_t g_adc_raw_i = 0U;
 static volatile uint16_t g_adc_dma[2] = {0U, 0U};
-//CV��CC��������ʼ��
-static pi_ctrl_t g_pi_cv = {CV_KP, CV_KI, 0.0f, DUTY_MIN, DUTY_MAX};
-static pi_ctrl_t g_pi_cc = {CC_KP, CC_KI, 0.0f, DUTY_MIN, DUTY_MAX};
+//CV和CC控制器初始化: 积分从最小占空比开始
+static pi_ctrl_t g_pi_cv = {CV_KP, CV_KI, DUTY_MIN, DUTY_MIN, DUTY_MAX};
+static pi_ctrl_t g_pi_cc = {CC_KP, CC_KI, DUTY_MIN, DUTY_MIN, DUTY_MAX};
 static volatile uint8_t g_uart_send_pending = 0U;
+//软启动状态
+static uint8_t g_softstart_active = 0U;
+static uint32_t g_softstart_tick = 0U;
+//电压滑动平均: 100点环形缓冲 + 运行和, 持续与IIR叠加
+static float g_vout_ma_buf[ADC_MA_WINDOW];
+static uint16_t g_vout_ma_idx = 0U;
+static float g_vout_ma_sum = 0.0f;
+static uint16_t g_vout_ma_cnt = 0U;     // 实际采样数(<100时除数减少)
+//设定值平滑变化: 实际用于PI的设定值(初始与g_vset_cv一致)
+static uint16_t g_vset_ramp = 500U;  /* 5.00V */
 
 //�༭ģʽ��ر���
 static display_state_t g_display_state = DISPLAY_NORMAL;
@@ -206,7 +222,7 @@ static void Power_ReadFeedback(void)
 {
   g_adc_raw_v = g_adc_dma[0];
   g_adc_raw_i = g_adc_dma[1];
-//����ADCԭʼֵ����ʵ�ʵ�ѹ�͵����������м򵥵�IIR�˲�������g_v/iout_real/filt
+  //根据ADC原始值计算实际电压和电流
   {
     const float vadc_v = ((float)g_adc_raw_v / ADC_FULL_SCALE) * ADC_VREF;
     const float vadc_i = ((float)g_adc_raw_i / ADC_FULL_SCALE) * ADC_VREF;
@@ -218,7 +234,24 @@ static void Power_ReadFeedback(void)
       g_iout_real = 0.0f;
     }
 
-    g_vout_filt += IIR_ALPHA * (g_vout_real - g_vout_filt);
+    /* 电压: 100点滑动平均 + IIR叠加滤波 (窗口未满时用已有值) */
+    {
+      g_vout_ma_sum += g_vout_real;
+      if (g_vout_ma_cnt >= ADC_MA_WINDOW)
+      {
+        g_vout_ma_sum -= g_vout_ma_buf[g_vout_ma_idx];  // 减掉最旧值
+      }
+      else
+      {
+        g_vout_ma_cnt++;
+      }
+      g_vout_ma_buf[g_vout_ma_idx] = g_vout_real;
+      g_vout_ma_idx = (g_vout_ma_idx + 1U) % ADC_MA_WINDOW;
+
+      const float vout_ma = g_vout_ma_sum / (float)g_vout_ma_cnt;
+      g_vout_filt += IIR_ALPHA * (vout_ma - g_vout_filt);  // IIR叠加在MA上
+    }
+    /* 电流: 标准IIR滤波 */
     g_iout_filt += IIR_ALPHA * (g_iout_real - g_iout_filt);
   }
 }
@@ -235,10 +268,27 @@ static void Power_ApplyDuty(float duty)
 
   __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, ccr);//����TIM1ͨ��1�ıȽϼĴ���ֵ������PWMռ�ձ�
 }
-//���ݵ�ǰ����ģʽ��CV��CC����ʹ�ö�Ӧ��PI�����������µ�ռ�ձ������Ӧ�õ�PWM���
+//根据当前模式(CV或CC)使用对应PI控制器更新占空比，并执行软启动
 static void Power_ControlStep(float dt_s)
 {
-  const float vset = (float)g_vset_cv * 0.01f;
+  /* 设定值平滑变化: 每周期向目标靠近VOUT_SLEW_RATE_CV */
+  {
+    int16_t delta = (int16_t)g_vset_cv - (int16_t)g_vset_ramp;
+    if (delta > (int16_t)VOUT_SLEW_RATE_CV)
+    {
+      g_vset_ramp += VOUT_SLEW_RATE_CV;
+    }
+    else if (delta < -(int16_t)VOUT_SLEW_RATE_CV)
+    {
+      g_vset_ramp -= VOUT_SLEW_RATE_CV;
+    }
+    else
+    {
+      g_vset_ramp = g_vset_cv;  // 直接到达，避免累积误差
+    }
+  }
+
+  const float vset = (float)g_vset_ramp * 0.01f;
   const float iset = (float)g_iset_da * 0.1f;
 
   if (g_mode == MODE_CV)
@@ -251,13 +301,29 @@ static void Power_ControlStep(float dt_s)
   }
 
   g_duty_cmd = clampf(g_duty_cmd, DUTY_MIN, DUTY_MAX);
+
+  /* 软启动: 在SOFTSTART_MS内从DUTY_MIN线性斜坡到PI目标 */
+  if (g_softstart_active)
+  {
+    const uint32_t elapsed = HAL_GetTick() - g_softstart_tick;
+    if (elapsed >= SOFTSTART_MS)
+    {
+      g_softstart_active = 0U;  // 斜坡完成
+    }
+    else
+    {
+      const float ramp = (float)elapsed / (float)SOFTSTART_MS;
+      g_duty_cmd = DUTY_MIN + ramp * (g_duty_cmd - DUTY_MIN);
+    }
+  }
+
   Power_ApplyDuty(g_duty_cmd);
 }
 
 static void Uart_SendSetpoints(void)
 {
   char msg[64];
-  const uint16_t vset_cv = g_vset_cv;
+  const uint16_t vset_cv = g_vset_cv;  // 显示用户设定的目标值(平滑变化在内部对PI透明)
   const uint8_t iset_da = g_iset_da;
   const uint16_t v_int = (uint16_t)(vset_cv / 100U);
   const uint16_t v_frac = (uint16_t)(vset_cv % 100U);
@@ -369,8 +435,8 @@ static void Oled_UpdateDisplay(void)
     return;
   }
 
-  /* ========== ������������ʾ ========== */
-  const uint16_t vset_cv = g_vset_cv;
+  /* ========== 正常模式显示 ========== */
+  const uint16_t vset_cv = g_vset_cv;  // 显示用户设定的目标值(平滑变化在内部对PI透明)
   const uint8_t iset_da = g_iset_da;
   const uint16_t vset_int = (uint16_t)(vset_cv / 100U);
   const uint16_t vset_frac = (uint16_t)(vset_cv % 100U);
@@ -610,6 +676,12 @@ int main(void)
     Error_Handler();
   }
 
+  /* 【安全启动】PWM启动前先写入最小占空比 */
+  g_duty_cmd = DUTY_MIN;
+  Power_ApplyDuty(g_duty_cmd);
+  PI_Reset(&g_pi_cv, DUTY_MIN);
+  PI_Reset(&g_pi_cc, DUTY_MIN);
+
   if (HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1) != HAL_OK)
   {
     Error_Handler();
@@ -625,9 +697,10 @@ int main(void)
     Error_Handler();
   }
 
-  PI_Reset(&g_pi_cv, g_duty_cmd);
-  PI_Reset(&g_pi_cc, g_duty_cmd);
-  Power_ApplyDuty(g_duty_cmd);
+  /* 启动ADC后进行软启动 */
+  g_softstart_active = 1U;
+  g_softstart_tick = HAL_GetTick();
+  g_vset_ramp = g_vset_cv;  // 初始化设定值陡坡与目标一致
 
   /* USER CODE END 2 */
 

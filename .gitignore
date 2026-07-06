@@ -1,2 +1,30 @@
-# ºöÂÔDebugÎÄ¼ş¼Ğ
+# STM32CubeIDE build artifacts
 /Debug/
+Debug/
+*.o
+*.d
+*.su
+*.bin
+*.elf
+*.list
+*.map
+makefile
+objects.*
+sources.mk
+subdir.mk
+
+# IDE temporary files
+.fang_cloud_tmp_dir
+.vscode/
+.idea/
+
+# Spreadsheets and images (not source code)
+*.xlsx
+~$*
+*.png
+*.jpg
+*.jpeg
+*.bmp
+
+# CubeMX backup
+.mxproject
