@@ -39,8 +39,8 @@
 /* USER CODE BEGIN PD */
 
 #define CTRL_PERIOD_MS               (1U)  //����ѭ�����ڣ�ms
-#define CTRL_PERIOD_S                (0.001f)//�����ʾ����ѭ�����ڣ�?0.001s
-//PWM��С/���ռ�ձ�?
+#define CTRL_PERIOD_S                (0.001f)//�����ʾ����ѭ�����ڣ�???0.001s
+//PWM��С/���ռ�ձ�???
 #define DUTY_MIN                     (0.02f)
 #define DUTY_MAX                     (0.95f)
 //��ѹ�趨�����޺Ͳ���
@@ -55,22 +55,22 @@
 #define ADC_FULL_SCALE               (4095.0f)
 #define ADC_VREF                     (3.3f)
 //����
-/* ��ʵ��궨�޸�?: Vout = Vadc * VOLTAGE_SCALE */
+/* ��ʵ��궨�޸�???: Vout = Vadc * VOLTAGE_SCALE */
 #define VOLTAGE_SCALE                (13.0f)
-/* ��ʵ��궨�޸�?: Iout = (Vadcx - CURRENT_OFFSET_V) * CURRENT_SCALE_A_PER_V */
+/* ��ʵ��궨�޸�???: Iout = (Vadcx - CURRENT_OFFSET_V) * CURRENT_SCALE_A_PER_V */
 #define CURRENT_SCALE_A_PER_V        (2.5f)
 #define CURRENT_OFFSET_V             (0.0f)
 
 #define IIR_ALPHA                    (0.2f)
 
 #define CV_KP                        (0.100f)
-#define CV_KI                        (10.00f)
+#define CV_KI                        (20.00f)
 #define CC_KP                        (0.0024f)
 #define CC_KI                        (0.024f)
-//软启�?: 从最小占空比到PI目标的斜坡时�?
+//软启�???: 从最小占空比到PI目标的斜坡时�???
 #define SOFTSTART_MS                 (100U)   // 100ms斜坡
-//设定值平滑变�?: 每控制周�?(1ms)设定值最大变化量(0.01V单位, 0.04V/cycle = 40V/s)
-#define VOUT_SLEW_RATE_CV            (4U)     // 0.04V per 1ms, 单位0.01V
+//设定值平滑变�???: 每控制周�???(1ms)设定值最大变化量(0.01V单位, 0.04V/cycle = 40V/s)
+#define VOUT_SLEW_RATE_CV            (40U)     // 0.04V per 1ms, 单位0.01V
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -124,23 +124,22 @@ static float g_vout_real = 0.0f;
 static float g_iout_real = 0.0f;
 static float g_vout_filt = 0.0f;
 static float g_iout_filt = 0.0f;
-//当前目标占空比，初始化为�?小占空比（安全启动）
+//当前目标占空比，初始化为�???小占空比（安全启动）
 static float g_duty_cmd = DUTY_MIN;
 //ADC原始数据
 static uint16_t g_adc_raw_v = 0U;
 static uint16_t g_adc_raw_i = 0U;
 static volatile uint16_t g_adc_dma[2] = {0U, 0U};
-//CV和CC控制器初始化: 积分从最小占空比�?�?
+//CV和CC控制器初始化: 积分从最小占空比�???�???
 static pi_ctrl_t g_pi_cv = {CV_KP, CV_KI, DUTY_MIN, DUTY_MIN, DUTY_MAX};
 static pi_ctrl_t g_pi_cc = {CC_KP, CC_KI, DUTY_MIN, DUTY_MIN, DUTY_MAX};
-static volatile uint8_t g_uart_send_pending = 0U;
 //软启动状�?
 static uint8_t g_softstart_active = 0U;
 static uint32_t g_softstart_tick = 0U;
-//设定值平滑变�?: 实际用于PI的设定�??(初始与g_vset_cv�?�?)
+//设定值平滑变�???: 实际用于PI的设定�??(初始与g_vset_cv�???�???)
 static uint16_t g_vset_ramp = 500U;  /* 5.00V */
 
-//�༭ģʽ��ر���?
+//�༭ģʽ��ر���???
 static display_state_t g_display_state = DISPLAY_NORMAL;
 static uint8_t g_edit_buf[6];     // �洢6λ��������: [V1,V2,Vf1,Vf2, I1,If1]
 static uint8_t g_edit_idx = 0;    // ��ǰ����λ�� 0~5
@@ -160,13 +159,13 @@ static void MX_SPI1_Init(void);
 /* USER CODE BEGIN PFP */
 
 static float clampf(float x, float min_val, float max_val);
-static void Power_ReadFeedback(void);
-static void Power_ControlStep(float dt_s);
-static void Power_ApplyDuty(float duty);
-static void Power_HandleKeyboard(void);
+void Power_ReadFeedback(void);
+void Power_ControlStep(float dt_s);
+void Power_ApplyDuty(float duty);
+void Power_HandleKeyboard(void);
 static float PI_Update(pi_ctrl_t *pi, float setpoint, float feedback, float dt_s);
 static void PI_Reset(pi_ctrl_t *pi, float preload);
-static void Uart_SendSetpoints(void);
+void Uart_SendSetpoints(void);
 static void Oled_UpdateDisplay(void);
 __weak int Keypad_GetKey(void);
 
@@ -188,21 +187,21 @@ static float clampf(float x, float min_val, float max_val)
   }
   return x;
 }
-//PI���������ú�������pi->integral����ΪԤ����ֵpreload����ֹģʽ�л�ʱ�����������ͻ��?
+//PI���������ú�������pi->integral����ΪԤ����ֵpreload����ֹģʽ�л�ʱ�����������ͻ��???
 static void PI_Reset(pi_ctrl_t *pi, float preload)
 {
   pi->integral = preload;
 }
-//PI���������º����������趨ֵsetpoint������ֵfeedback��ʱ�䲽��dt_s�����µĿ������?
+//PI���������º����������趨ֵsetpoint������ֵfeedback��ʱ�䲽��dt_s�����µĿ������???
 static float PI_Update(pi_ctrl_t *pi, float setpoint, float feedback, float dt_s)
 {
-  const float err = setpoint - feedback;  //���?
+  const float err = setpoint - feedback;  //���???
   const float p_term = pi->kp * err;  //������
-  float out = p_term + pi->integral;  //��ʱ���?
+  float out = p_term + pi->integral;  //��ʱ���???
 
   if ((out > pi->out_min) && (out < pi->out_max))
   {
-    pi->integral += pi->ki * err * dt_s;  //�������δ����ʱ�Ÿ��»������ֹ���ֱ���?
+    pi->integral += pi->ki * err * dt_s;  //�������δ����ʱ�Ÿ��»������ֹ���ֱ���???
   }
   //�������out
   pi->integral = clampf(pi->integral, pi->out_min, pi->out_max);
@@ -211,7 +210,7 @@ static float PI_Update(pi_ctrl_t *pi, float setpoint, float feedback, float dt_s
   return out;
 }
 //
-static void Power_ReadFeedback(void)
+void Power_ReadFeedback(void)
 {
   g_adc_raw_v = g_adc_dma[0];
   g_adc_raw_i = g_adc_dma[1];
@@ -220,21 +219,22 @@ static void Power_ReadFeedback(void)
     const float vadc_v = ((float)g_adc_raw_v / ADC_FULL_SCALE) * ADC_VREF;
     const float vadc_i = ((float)g_adc_raw_i / ADC_FULL_SCALE) * ADC_VREF;
 
-    g_vout_real = vadc_v * VOLTAGE_SCALE;
-    g_iout_real = (vadc_i - CURRENT_OFFSET_V) * CURRENT_SCALE_A_PER_V;
+    //g_vout_real = (vadc_v * VOLTAGE_SCALE) * 1.0307 + 0.4546;
+    g_vout_real = (vadc_v * VOLTAGE_SCALE);
+    g_iout_real = ((3.3-vadc_i) - CURRENT_OFFSET_V) * CURRENT_SCALE_A_PER_V;
     if (g_iout_real < 0.0f)
     {
       g_iout_real = 0.0f;
     }
 
-    /* 电压: 标准IIR滤波 (硬件过采样128x已在前端处理噪声) */
+    /* 电压: 标准IIR滤波 (硬件过采�??128x已在前端处理噪声) */
     g_vout_filt += IIR_ALPHA * (g_vout_real - g_vout_filt);
     /* 电流: 标准IIR滤波 */
     g_iout_filt += IIR_ALPHA * (g_iout_real - g_iout_filt);
   }
 }
-//���ݼ���õ���ռ�ձ�duty������TIM1ͨ��1�ıȽϼĴ���ֵ���Ӷ�����PWM���ռ�ձ�?
-static void Power_ApplyDuty(float duty)
+//���ݼ���õ���ռ�ձ�duty������TIM1ͨ��1�ıȽϼĴ���ֵ���Ӷ�����PWM���ռ�ձ�???
+void Power_ApplyDuty(float duty)
 {
   const uint32_t period = __HAL_TIM_GET_AUTORELOAD(&htim1) + 1U;//���ڶ�ȡ��ʱ���Զ���װ��ֵ
   uint32_t ccr = (uint32_t)(duty * (float)period);//����ռ�ձȼ���ȽϼĴ���ֵCCR
@@ -246,10 +246,10 @@ static void Power_ApplyDuty(float duty)
 
   __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, ccr);//����TIM1ͨ��1�ıȽϼĴ���ֵ������PWMռ�ձ�
 }
-//根据当前模式(CV或CC)使用对应PI控制器更新占空比，并执行软启�?
-static void Power_ControlStep(float dt_s)
+//根据当前模式(CV或CC)使用对应PI控制器更新占空比，并执行软启�???
+void Power_ControlStep(float dt_s)
 {
-  /* 设定值平滑变�?: 每周期向目标靠近VOUT_SLEW_RATE_CV */
+  /* 设定值平滑变�???: 每周期向目标靠近VOUT_SLEW_RATE_CV */
   {
     int16_t delta = (int16_t)g_vset_cv - (int16_t)g_vset_ramp;
     if (delta > (int16_t)VOUT_SLEW_RATE_CV)
@@ -262,7 +262,7 @@ static void Power_ControlStep(float dt_s)
     }
     else
     {
-      g_vset_ramp = g_vset_cv;  // 直接到达，避免累积误�?
+      g_vset_ramp = g_vset_cv;  // 直接到达，避免累积误�???
     }
   }
 
@@ -280,7 +280,7 @@ static void Power_ControlStep(float dt_s)
 
   g_duty_cmd = clampf(g_duty_cmd, DUTY_MIN, DUTY_MAX);
 
-  /* 软启�?: 在SOFTSTART_MS内从DUTY_MIN线�?�斜坡到PI目标 */
+  /* 软启�???: 在SOFTSTART_MS内从DUTY_MIN线�?�斜坡到PI目标 */
   if (g_softstart_active)
   {
     const uint32_t elapsed = HAL_GetTick() - g_softstart_tick;
@@ -298,10 +298,10 @@ static void Power_ControlStep(float dt_s)
   Power_ApplyDuty(g_duty_cmd);
 }
 
-static void Uart_SendSetpoints(void)
+void Uart_SendSetpoints(void)
 {
   char msg[64];
-  const uint16_t vset_cv = g_vset_cv;  // 显示用户设定的目标�??(平滑变化在内部对PI透明)
+  const uint16_t vset_cv = g_vset_cv;  // 显示用户设定的目标值
   const uint8_t iset_da = g_iset_da;
   const uint16_t v_int = (uint16_t)(vset_cv / 100U);
   const uint16_t v_frac = (uint16_t)(vset_cv % 100U);
@@ -334,7 +334,7 @@ static void Oled_UpdateDisplay(void)
   char line2[32];
   char line3[32];
 
-  /* ������Ϣ��ʾ��CANCEL / CONFIRM 1����Զ��˻�������? */
+  /* ������Ϣ��ʾ��CANCEL / CONFIRM 1����Զ��˻�������??? */
   if (g_display_state == DISPLAY_MSG_CANCEL)
   {
     if (HAL_GetTick() - g_msg_tick >= 1000U)
@@ -446,7 +446,7 @@ static void Oled_UpdateDisplay(void)
   LCD_DisplayLine(140, line2);
   LCD_DisplayLine(160, line3);
 }
-//��ȡ�����������������Ĭ��ʵ�ַ���?-1��ʾû�а��������£��û������������ļ����ض���ú�����ʵ��ʵ�ʵİ�����ȡ�߼�?
+//��ȡ�����������������Ĭ��ʵ�ַ���???-1��ʾû�а��������£��û������������ļ����ض���ú�����ʵ��ʵ�ʵİ�����ȡ�߼�???
 __weak int Keypad_GetKey(void)
 {
   return -1;
@@ -472,8 +472,8 @@ static void Edit_ApplyValues(void)
   g_iset_da = new_iset;
 }
 
-//����������룬���ݰ�����������ģʽ���趨ֵ�Ȳ���?
-static void Power_HandleKeyboard(void)
+//����������룬���ݰ�����������ģʽ���趨ֵ�Ȳ���???
+void Power_HandleKeyboard(void)
 {
   const int key = Keypad_GetKey();
   if (key < 0)
@@ -654,7 +654,7 @@ int main(void)
     Error_Handler();
   }
 
-  /* 【安全启动�?�PWM启动前先写入�?小占空比 */
+  /* 【安全启动�?�PWM启动前先写入�???小占空比 */
   g_duty_cmd = DUTY_MIN;
   Power_ApplyDuty(g_duty_cmd);
   PI_Reset(&g_pi_cv, DUTY_MIN);
@@ -678,7 +678,7 @@ int main(void)
   /* 启动ADC后进行软启动 */
   g_softstart_active = 1U;
   g_softstart_tick = HAL_GetTick();
-  g_vset_ramp = g_vset_cv;  // 初始化设定�?�陡坡与目标�?�?
+  g_vset_ramp = g_vset_cv;  // 初始化设定�?�陡坡与目标�???�???
 
   /* USER CODE END 2 */
 
@@ -689,18 +689,8 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    static uint32_t last_tick = 0U;
     static uint32_t last_oled_tick = 0U;
     const uint32_t now = HAL_GetTick();
-
-    if ((now - last_tick) >= CTRL_PERIOD_MS)
-    {
-      last_tick = now;
-
-      Power_HandleKeyboard();
-      Power_ReadFeedback();
-      Power_ControlStep(CTRL_PERIOD_S);
-    }
 
     if ((now - last_oled_tick) >= 200U)
     {
@@ -708,11 +698,6 @@ int main(void)
       Oled_UpdateDisplay();
     }
 
-    if (g_uart_send_pending != 0U)
-    {
-      g_uart_send_pending = 0U;
-      Uart_SendSetpoints();
-    }
   }
   /* USER CODE END 3 */
 }
@@ -832,6 +817,7 @@ static void MX_ADC1_Init(void)
 
   /** Configure Regular Channel
   */
+  sConfig.Channel = ADC_CHANNEL_2;
   sConfig.Rank = ADC_REGULAR_RANK_2;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   {
@@ -985,9 +971,9 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 17000-1;
+  htim2.Init.Prescaler = 170-1;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 9999;
+  htim2.Init.Period = 999;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
@@ -1145,10 +1131,8 @@ static void MX_GPIO_Init(void)
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-  if (htim->Instance == TIM2)
-  {
-    g_uart_send_pending = 1U;
-  }
+  /* UART发�?�已移至TIM2_IRQHandler中处理，此回调不再使�? */
+  UNUSED(htim);
 }
 
 /* USER CODE END 4 */

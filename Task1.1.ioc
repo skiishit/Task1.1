@@ -1,6 +1,6 @@
 #MicroXplorer Configuration settings - do not modify
 ADC1.Channel-4\#ChannelRegularConversion=ADC_CHANNEL_1
-ADC1.Channel-5\#ChannelRegularConversion=ADC_CHANNEL_1
+ADC1.Channel-5\#ChannelRegularConversion=ADC_CHANNEL_2
 ADC1.CommonPathInternal=null|null|null|null
 ADC1.DMAContinuousRequests=ENABLE
 ADC1.EOCSelection=ADC_EOC_SEQ_CONV
@@ -296,8 +296,8 @@ TIM1.TIM_MasterOutputTrigger2=TIM_TRGO2_UPDATE
 TIM1.TIM_MasterSlaveMode=TIM_MASTERSLAVEMODE_ENABLE
 TIM2.AutoReloadPreload=TIM_AUTORELOAD_PRELOAD_ENABLE
 TIM2.IPParameters=Prescaler,PeriodNoDither,AutoReloadPreload
-TIM2.PeriodNoDither=10000-1
-TIM2.Prescaler=17000-1
+TIM2.PeriodNoDither=1000-1
+TIM2.Prescaler=170-1
 USART1.IPParameters=VirtualMode-Asynchronous
 USART1.VirtualMode-Asynchronous=VM_ASYNC
 VP_SYS_VS_DBSignals.Mode=DisableDeadBatterySignals
