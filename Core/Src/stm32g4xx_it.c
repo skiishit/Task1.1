@@ -61,6 +61,12 @@ extern TIM_HandleTypeDef htim2;
 extern UART_HandleTypeDef huart1;
 /* USER CODE BEGIN EV */
 
+/* 从main.c引入控制函数 */
+extern void Power_ReadFeedback(void);
+extern void Power_ControlStep(float dt_s);
+extern void Power_HandleKeyboard(void);
+extern void Uart_SendSetpoints(void);
+
 /* USER CODE END EV */
 
 /******************************************************************************/
@@ -255,7 +261,21 @@ void TIM2_IRQHandler(void)
   /* USER CODE END TIM2_IRQn 0 */
   HAL_TIM_IRQHandler(&htim2);
   /* USER CODE BEGIN TIM2_IRQn 1 */
+  /* �?1ms控制循环 (TIM2由CubeMX配置�?1ms周期) */
+  Power_ReadFeedback();
+  Power_ControlStep(0.001f);
+  Power_HandleKeyboard();
 
+  /* UART�?1000�?(1s)发�?�一次设定�?? */
+  {
+    static uint16_t uart_div = 0;
+    uart_div++;
+    if (uart_div >= 1000U)
+    {
+      uart_div = 0;
+      Uart_SendSetpoints();
+    }
+  }
   /* USER CODE END TIM2_IRQn 1 */
 }
 
