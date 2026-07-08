@@ -79,6 +79,10 @@
 //电流校准: 一次型 feedback = IOUT_CAL_A * Iout + IOUT_CAL_B, 全范围±4.0%
 #define IOUT_CAL_A                   (0.972764f)
 #define IOUT_CAL_B                   (-0.484010f)
+//过压过流保护阈值
+#define OVP_THRESHOLD                (33.0f)   // 过压保护阈值(V)
+#define OCP_THRESHOLD                (2.2f)    // 过流保护阈值(A)
+#define FAULT_RECOVERY_MS            (500U)    // 故障自动恢复等待时间(ms)
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -148,6 +152,9 @@ static uint32_t g_softstart_tick = 0U;
 static uint16_t g_vset_ramp = 500U;  /* 5.00V */
 //电流设定值平滑变化: 实际用于PI的设定值(0.0001A单位, 初始与g_iset_da一致)
 static uint16_t g_iset_ramp = 10000U; /* 1.0A, 0.0001A单位 */
+//故障保护状态
+static uint8_t g_fault_active = 0U;   // 0=正常, 1=故障保护中
+static uint32_t g_fault_tick = 0U;    // 故障触发时刻
 
 //�༭ģʽ��ر���????
 static display_state_t g_display_state = DISPLAY_NORMAL;
@@ -260,7 +267,7 @@ void Power_ApplyDuty(float duty)
 
   __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, ccr);//����TIM1ͨ��1�ıȽϼĴ���ֵ������PWMռ�ձ�
 }
-//根据当前模式(CV或CC)使用对应PI控制器更新占空比，并执行软启�????
+//根据当前或自动切换模式(CV/CC)使用对应PI控制器，带OVP/OCP保护
 void Power_ControlStep(float dt_s)
 {
   /* 设定值平滑变�????: 每周期向目标靠近 */
@@ -297,6 +304,26 @@ void Power_ControlStep(float dt_s)
   const float vset = (float)g_vset_ramp * 0.01f;
   const float iset = (float)g_iset_ramp * 0.0001f;
 
+  /* 自动切换CV/CC模式 */
+  if (g_mode == MODE_CV)
+  {
+    /* CV模式下电流超过设定值 → 切CC */
+    if (g_iout_filt > iset)
+    {
+      g_mode = MODE_CC;
+      PI_Reset(&g_pi_cc, g_duty_cmd);
+    }
+  }
+  else
+  {
+    /* CC模式下电压达到设定值 → 切CV */
+    if (g_vout_filt >= vset)
+    {
+      g_mode = MODE_CV;
+      PI_Reset(&g_pi_cv, g_duty_cmd);
+    }
+  }
+
   if (g_mode == MODE_CV)
   {
     g_duty_cmd = PI_Update(&g_pi_cv, vset, g_vout_filt, dt_s);
@@ -308,18 +335,50 @@ void Power_ControlStep(float dt_s)
 
   g_duty_cmd = clampf(g_duty_cmd, DUTY_MIN, DUTY_MAX);
 
-  /* 软启�????: 在SOFTSTART_MS内从DUTY_MIN线�?�斜坡到PI目标 */
+  /* 软启动 */
   if (g_softstart_active)
   {
     const uint32_t elapsed = HAL_GetTick() - g_softstart_tick;
     if (elapsed >= SOFTSTART_MS)
     {
-      g_softstart_active = 0U;  // 斜坡完成
+      g_softstart_active = 0U;
     }
     else
     {
       const float ramp = (float)elapsed / (float)SOFTSTART_MS;
       g_duty_cmd = DUTY_MIN + ramp * (g_duty_cmd - DUTY_MIN);
+    }
+  }
+
+  /* OVP/OCP保护: 触发时切换到限值模式 */
+  if (g_vout_filt > OVP_THRESHOLD)
+  {
+    if (!g_fault_active)
+    {
+      g_fault_active = 1U;
+      g_fault_tick = HAL_GetTick();
+      g_vset_cv = 3300U;  /* 33.00V */
+      g_mode = MODE_CV;
+    }
+  }
+  else if (g_iout_filt > OCP_THRESHOLD)
+  {
+    if (!g_fault_active)
+    {
+      g_fault_active = 1U;
+      g_fault_tick = HAL_GetTick();
+      g_iset_da = 20U;    /* 2.0A */
+      g_mode = MODE_CC;
+    }
+  }
+
+  /* 故障恢复: 条件消除500ms后清除故障标志(设定值保留在限值) */
+  if (g_fault_active)
+  {
+    if (!(g_vout_filt > OVP_THRESHOLD || g_iout_filt > OCP_THRESHOLD)
+        && (HAL_GetTick() - g_fault_tick >= FAULT_RECOVERY_MS))
+    {
+      g_fault_active = 0U;
     }
   }
 
